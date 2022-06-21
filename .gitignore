@@ -1,0 +1,7 @@
+.vscode/
+clean_models/
+troj_models/
+data/data/
+__pycache__/
+data/__pycache__/
+log/
