@@ -8,6 +8,7 @@ else:
 from typing import List
 import random
 sys.path.append("../")
+sys.path.append("/home/songzhu/PycharmProjects/UAPAttack")
 
 import torch
 from torch.utils.data import DataLoader
@@ -20,7 +21,7 @@ import yaml
 import pickle as pkl
 from datetime import datetime
 
-from data_utils import download_url, check_integrity
+from data.data_utils import download_url, check_integrity
 from TRAINER import TRAINER
 from networks import ResNet18
 
@@ -127,6 +128,8 @@ class CIFAR10(data.Dataset):
             num_data = len(self.data)
             self.num_class = len(np.unique(self.labels_c))
 
+        self.labels_c = torch.tensor(self.labels_c)
+        self.labels_t = torch.tensor(self.labels_t)
         self._load_meta()
 
     def download(self):
@@ -149,13 +152,13 @@ class CIFAR10(data.Dataset):
             self.data[i, 1] = self.data[i, 1] - m
             self.data[i, 2] = self.data[i, 2] - m
 
-    def insert_data(self, new_data: torch.Tensor, new_labels_c: List, new_labels_t: List) -> None:
-        assert isinstance(new_data, torch.Tensor), f"data need to be a torch.Tensor, but find {type(new_data)} !"
-        assert isinstance(new_labels_c, List), f"labels need to be a list, but find {type(new_labels_c)} !"
-        assert isinstance(new_labels_t, List), f"labels need to be a list, but find {type(new_labels_t)} !"
-        self.data = torch.cat([self.data, new_data], 0)
-        self.labels_c += new_labels_c
-        self.labels_t += new_labels_t
+    def insert_data(self, new_data: np.ndarray, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+        assert isinstance(new_data, np.ndarray), "data need to be a np.ndarray, but find " + str(type(new_data)) 
+        assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
+        assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
+        self.data = np.concatenate([self.data, new_data], 0)
+        self.labels_c = np.concatenate([self.labels_c, new_labels_c], 0)
+        self.labels_t = np.concatenate([self.labels_t, new_labels_t], 0)
 
     def _load_meta(self):
         path = os.path.join(self.root, self.base_folder, self.meta['filename'])
@@ -253,10 +256,11 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    with open('../experiment_configuration.yml', 'r') as f:
+    with open('experiment_configuration.yml', 'r') as f:
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
+    config['train']['N_EPOCHS'] = 200
 
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),

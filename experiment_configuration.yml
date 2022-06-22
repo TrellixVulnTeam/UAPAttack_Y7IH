@@ -1,25 +1,25 @@
 network:
-  PRETRAINED: 1
+  PRETRAINED: !!bool true
 
 train:
-  LR: 0.1
-  WEIGHT_DECAY: 0.0005
-  MOMENTUM: 0.9
-  BATCH_SIZE: 128
-  GAMMA: 0.5
+  LR: !!float 0.1
+  WEIGHT_DECAY: !!float 0.0005
+  MOMENTUM: !!float 0.9
+  BATCH_SIZE: !!int 128
+  GAMMA: !!float 0.5
   mnist:
-    N_EPOCHS: 5
-    MILE_STONE: [3]
-    T_max: 200
+    N_EPOCHS: !!int 5
+    MILE_STONE: !!seq [3]
+    T_max: !!int 200
   cifar10:
-    N_EPOCHS: 200
-    MILE_STONE: [20, 40]
-    T_MAX: 200
+    N_EPOCHS: !!int 200
+    MILE_STONE: !!seq [20, 40]
+    T_MAX: !!int 200
 
 attack: 
-  TROJ_FRACTION: 0.2
-  SOURCE_TARGET_PAIR: {0:1}
+  TROJ_FRACTION: !!float 0.2
+  SOURCE_TARGET_PAIR: !!map {0: 1}
 
 misc:
-  VERBOSE: 1
-  MONITOR_WINDOW: 5
+  VERBOSE: !!bool true
+  MONITOR_WINDOW: !!int 5

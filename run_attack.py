@@ -11,9 +11,10 @@ import yaml
 import pickle as pkl
 from datetime import datetime
 
-from data import DATA_BUILDER
+from data.DATA_BUILDER import DATA_BUILDER
 from ATTACKER import BADNETATTACK
 from TRAINER import TRAINER
+from networks import ResNet18
 
 
 def run_attack(config: Dict) -> Dict:
@@ -39,19 +40,22 @@ def run_attack(config: Dict) -> Dict:
 
     # Inject troj
     if METHOD == 'badnet':
-        attacker = BADNETATTACK(dataset=dataset.trainset, 
-                                target_source_pair=config['attack']['SOURCE_TARGET_PAIR'],
-                                target_source_pair=float(config['attack']['TROJ_FRACTION']))
+        attacker_train = BADNETATTACK(dataset=dataset.trainset, 
+                                      target_source_pair=config['attack']['SOURCE_TARGET_PAIR'],
+                                      troj_fraction=float(config['attack']['TROJ_FRACTION']))
+        attacker_test  = BADNETATTACK(dataset=dataset.testset, 
+                                      target_source_pair=config['attack']['SOURCE_TARGET_PAIR'],
+                                      troj_fraction=float(config['attack']['TROJ_FRACTION']))
     else:
         raise NotImplementedError
-    attacker.inject_trojan()
+    attacker_train.inject_trojan()
+    attacker_test.inject_trojan() 
 
     # training with trojaned dataset
     if config['args']['network'] == 'resnet18':
-            model = models.resnet18()
-            model.fc = torch.nn.Linear(model.fc.in_features, dataset.num_classes)
+            model = ResNet18(num_classes=dataset.num_classes)
     if config['network']['PRETRAINED']:
-        clean_state_dict = pkl.load(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl')
+        clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
         model.load_state_dict(clean_state_dict['model_state_dict'])
 
     trainer = TRAINER(model=model, config=config)
@@ -80,8 +84,8 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
     f.close()
     config['args'] = defaultdict(str)
-    for k, v in args._get_args():
-        config[k] = v
+    for k, v in args._get_kwargs():
+        config['args'][k] = v
 
     result_dict = run_attack(config)
 

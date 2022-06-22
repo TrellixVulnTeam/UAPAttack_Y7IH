@@ -3,7 +3,7 @@ from typing import Dict
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from CIFAR import CIFAR10
+from .CIFAR import CIFAR10
 
 class DATA_BUILDER():
 
@@ -30,7 +30,7 @@ class DATA_BUILDER():
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
             self.testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['BATCH_SIZE'], shuffle=True, pin_memory=True, num_workers=1)
+            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['BATCH_SIZE'], shuffle=True)
             self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['BATCH_SIZE'])
         else:
             raise NotImplementedError
