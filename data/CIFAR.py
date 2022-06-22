@@ -7,8 +7,8 @@ else:
     import pickle
 from typing import List
 import random
+sys.path.append("./")
 sys.path.append("../")
-sys.path.append("/home/songzhu/PycharmProjects/UAPAttack")
 
 import torch
 from torch.utils.data import DataLoader
@@ -21,10 +21,9 @@ import yaml
 import pickle as pkl
 from datetime import datetime
 
-from data.data_utils import download_url, check_integrity
+from data_utils import download_url, check_integrity
 from TRAINER import TRAINER
 from networks import ResNet18
-
 
 class CIFAR10(data.Dataset):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
