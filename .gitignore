@@ -7,3 +7,4 @@ data/__pycache__/
 log/
 data/cifar-10-batches-py/
 data/cifar-10-python.tar.gz
+tmp/

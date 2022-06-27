@@ -21,8 +21,8 @@ import yaml
 import pickle as pkl
 from datetime import datetime
 
-from data_utils import download_url, check_integrity
-from TRAINER import TRAINER
+from .data_utils import download_url, check_integrity
+from trainer import TRAINER
 from networks import ResNet18
 
 class CIFAR10(data.Dataset):
@@ -158,6 +158,12 @@ class CIFAR10(data.Dataset):
         self.data = np.concatenate([self.data, new_data], 0)
         self.labels_c = np.concatenate([self.labels_c, new_labels_c], 0)
         self.labels_t = np.concatenate([self.labels_t, new_labels_t], 0)
+        
+    def select_data(self, indices: np.ndarray) -> None:
+        assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
+        self.data = self.data[indices]
+        self.labels_c = self.labels_c[indices]
+        self.labels_t = self.labels_t[indices]
 
     def _load_meta(self):
         path = os.path.join(self.root, self.base_folder, self.meta['filename'])
@@ -259,7 +265,7 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['N_EPOCHS'] = 200
+    config['train']['cifar10']['N_EPOCHS'] = 200
 
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -291,7 +297,7 @@ if __name__ == '__main__':
     result_dict['config'] = config
 
     time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
-    result_file = f"../clean_models/cifar10_resnet18_clean_{time_stamp}.pkl"
+    result_file = f"clean_models/cifar10_resnet18_clean_{time_stamp}.pkl"
     with open(result_file, 'wb') as f:
         pkl.dump(result_dict, f)
     f.close()

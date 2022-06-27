@@ -1,3 +1,13 @@
+dataset:
+  mnist: 
+    NUM_CLASSES: !!int 10
+    NUM_CHANNELS: !!int 1
+    IMG_SIZE: !!int 28
+  cifar10:
+    NUM_CLASSES: !!int 10
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE: !!int 32
+
 network:
   PRETRAINED: !!bool true
 
@@ -7,6 +17,7 @@ train:
   MOMENTUM: !!float 0.9
   BATCH_SIZE: !!int 128
   GAMMA: !!float 0.5
+  ADV_TRAIN: !!bool true
   mnist:
     N_EPOCHS: !!int 5
     MILE_STONE: !!seq [3]
@@ -17,9 +28,23 @@ train:
     T_MAX: !!int 200
 
 attack: 
+  TRIGGER_SIZE: !!float 5
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
+  uap:
+    OPTIM_EPOCHS: !!int 10
+    N_IMAGES: !!int 300           # num of images to be edited by UAP
+    N_UAP: !!int 1                # num of UAP pattern used
+    FOOLING_RATE: !!float 0.8     # proportion of images to be fooled before termination
+    EPS: !!float 1                # step size
+    DYNAMIC: !!bool false         # whether to dynamically inject trojan
+
+adversarial:
+  EPS: !!float 1                  # step size
+  RADIUS: !!float 0.01            # defense radius
+  OPTIM_EPOCHS: !!int 10
+  LAMBDA: !!float 0.2             # coefficient for adv training loss
 
 misc:
   VERBOSE: !!bool true
-  MONITOR_WINDOW: !!int 5
+  MONITOR_WINDOW: !!int 1

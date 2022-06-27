@@ -6,9 +6,12 @@ Reference:
 [1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 '''
+from typing import Dict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pickle as pkl
 
 
 class BasicBlock(nn.Module):
@@ -124,3 +127,24 @@ def test():
     print(y.size())
 
 # test()
+
+
+class NETWORK_BUILDER():
+    
+    def __init__(self, 
+                 config: Dict) -> None:
+        self.network = config['args']['network']
+        self.config = config
+        
+    def build_network(self) -> None:
+        
+        DATASET : str = self.config['args']['dataset']
+        NETWORK : str = self.config['args']['network'] 
+        
+        if self.network == 'resnet18':
+            model = ResNet18(num_classes=self.config['dataset'][DATASET]['NUM_CLASSES'])
+        if self.config['network']['PRETRAINED']:
+            clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
+            model.load_state_dict(clean_state_dict['model_state_dict'])
+        
+        self.model = model

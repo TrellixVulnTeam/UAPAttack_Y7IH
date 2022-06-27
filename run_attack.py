@@ -12,9 +12,9 @@ import pickle as pkl
 from datetime import datetime
 
 from data.DATA_BUILDER import DATA_BUILDER
-from ATTACKER import BADNETATTACK
-from TRAINER import TRAINER
-from networks import ResNet18
+from attacker import BADNETATTACK, UAPATTACK
+from trainer import TRAINER
+from networks import NETWORK_BUILDER
 
 
 def run_attack(config: Dict) -> Dict:
@@ -27,38 +27,30 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    METHOD:str  = config['args']['method']
-    DATASET:str = config['args']['dataset']
-    NETWORK:str = config['args']['network']
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     config['train']['device'] = device
 
     # Build dataset
     dataset = DATA_BUILDER(config=config)
     dataset.build_dataset()
-
+    
+    # Build network
+    model = NETWORK_BUILDER(config=config)
+    model.build_network()
+    
     # Inject troj
-    if METHOD == 'badnet':
-        attacker_train = BADNETATTACK(dataset=dataset.trainset, 
-                                      target_source_pair=config['attack']['SOURCE_TARGET_PAIR'],
-                                      troj_fraction=float(config['attack']['TROJ_FRACTION']))
-        attacker_test  = BADNETATTACK(dataset=dataset.testset, 
-                                      target_source_pair=config['attack']['SOURCE_TARGET_PAIR'],
-                                      troj_fraction=float(config['attack']['TROJ_FRACTION']))
+    if config['args']['method'] == 'badnet':
+        attacker = BADNETATTACK(config=config)
+    elif config['args']['method'] == 'uap':
+        attacker = UAPATTACK(dataset=dataset.trainset, model=model.model, config=config)
     else:
         raise NotImplementedError
-    attacker_train.inject_trojan()
-    attacker_test.inject_trojan() 
+    print(">>> Inject Trojan")
+    attacker.inject_trojan(dataset.trainset)
+    attacker.inject_trojan(dataset.testset)
 
     # training with trojaned dataset
-    if config['args']['network'] == 'resnet18':
-            model = ResNet18(num_classes=dataset.num_classes)
-    if config['network']['PRETRAINED']:
-        clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
-        model.load_state_dict(clean_state_dict['model_state_dict'])
-
-    trainer = TRAINER(model=model, config=config)
+    trainer = TRAINER(model=model.model, config=config)
     trainer.train(trainloader=dataset.trainloader, 
                   validloader=dataset.testloader)
     result_dict = trainer.eval(evalloader=dataset.testloader)
@@ -69,7 +61,7 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='badnet', choices={'badnet', 'sig', 'ref', 'wanet', 'uap'})
+    parser.add_argument('--method', type=str, default='uap', choices={'badnet', 'sig', 'ref', 'wanet', 'uap'})
     parser.add_argument('--dataset', type=str, default='cifar10', choices={'mnist', 'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='0')
