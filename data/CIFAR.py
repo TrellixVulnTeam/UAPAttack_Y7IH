@@ -7,6 +7,7 @@ else:
     import pickle
 from typing import List
 import random
+from collections import defaultdict
 sys.path.append("./")
 sys.path.append("../")
 
@@ -23,7 +24,7 @@ from datetime import datetime
 
 from .data_utils import download_url, check_integrity
 from trainer import TRAINER
-from networks import ResNet18
+from networks import ResNet18, VGG16
 
 class CIFAR10(data.Dataset):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
@@ -130,7 +131,13 @@ class CIFAR10(data.Dataset):
         self.labels_c = torch.tensor(self.labels_c)
         self.labels_t = torch.tensor(self.labels_t)
         self._load_meta()
+        
+        self.clean_num = len(self.data)
 
+        self.troj_data = []
+        self.troj_labels_c = []
+        self.troj_labels_t = []
+        
     def download(self):
         import tarfile
 
@@ -155,9 +162,9 @@ class CIFAR10(data.Dataset):
         assert isinstance(new_data, np.ndarray), "data need to be a np.ndarray, but find " + str(type(new_data)) 
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
-        self.data = np.concatenate([self.data, new_data], 0)
-        self.labels_c = np.concatenate([self.labels_c, new_labels_c], 0)
-        self.labels_t = np.concatenate([self.labels_t, new_labels_t], 0)
+        self.troj_data = new_data
+        self.troj_labels_c = new_labels_c
+        self.troj_labels_t = new_labels_t
         
     def select_data(self, indices: np.ndarray) -> None:
         assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
@@ -188,7 +195,7 @@ class CIFAR10(data.Dataset):
         return True
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data)+len(self.troj_data)
 
     def __getitem__(self, index):
         """
@@ -197,19 +204,24 @@ class CIFAR10(data.Dataset):
         Returns:
             tuple: (image, target) where target is index of the target class.
         """
-        img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
+        
+        if index < self.clean_num:
+            img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
 
-        # doing this so that it is consistent with all other datasets
-        # to return a PIL Image
-        img = Image.fromarray(img)
+            # doing this so that it is consistent with all other datasets
+            # to return a PIL Image
+            img = Image.fromarray(img)
 
-        if self.transform is not None:
-            img = self.transform(img)
+            if self.transform is not None:
+                img = self.transform(img)
 
-        if self.target_transform is not None:
-            labels_c = self.target_transform(labels_c)
-            labels_t = self.target_transform(labels_t)
-
+            if self.target_transform is not None:
+                labels_c = self.target_transform(labels_c)
+                labels_t = self.target_transform(labels_t)
+        else:
+            img = torch.tensor(self.troj_data[index-self.clean_num]).permute(2,0,1)
+            labels_c, labels_t = torch.tensor(self.troj_labels_c[index-self.clean_num]), torch.tensor(self.troj_labels_t[index-self.clean_num])
+        
         return index, img, labels_c, labels_t
 
     def __repr__(self):
@@ -265,8 +277,13 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['cifar10']['N_EPOCHS'] = 200
-
+    config['train']['cifar10']['N_EPOCHS'] = 100
+    config['args'] = defaultdict()
+    config['args']['dataset'] = 'cifar10'
+    config['args']['network'] = 'vgg16'
+    config['args']['method'] = 'clean'
+    config['args']['logdir'] = './log'
+    
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -281,13 +298,12 @@ if __name__ == '__main__':
 
     trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
     testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-    trainloader = DataLoader(trainset, batch_size=int(config['train']['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
-    testloader  = DataLoader(testset, batch_size=int(config['train']['BATCH_SIZE']))
+    trainloader = DataLoader(trainset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
+    testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
 
     # For resnet18
-    model = models.resnet18(pretrained=False)
-    model.fc = torch.nn.Linear(in_features=model.fc.in_features, out_features=10).to(device)
-    model = ResNet18(num_classes=10).to(device)
+    # model = ResNet18(num_classes=43).to(device)
+    model = VGG16(num_classes=10).to(device)
 
     model_trainer = TRAINER(model=model, config=config)
     model_trainer.train(trainloader, testloader)
@@ -297,7 +313,7 @@ if __name__ == '__main__':
     result_dict['config'] = config
 
     time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
-    result_file = f"clean_models/cifar10_resnet18_clean_{time_stamp}.pkl"
+    result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_{time_stamp}.pkl"
     with open(result_file, 'wb') as f:
         pkl.dump(result_dict, f)
     f.close()

@@ -2,7 +2,6 @@ from collections import defaultdict
 from typing import Dict
 
 import torch
-from torch.autograd import grad
 import numpy as np
 from copy import deepcopy
 
@@ -21,34 +20,35 @@ class ATTACKER():
         if not hasattr(self, 'trigger'):
             self._generate_trigger()
         
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=1)
+        
         imgs_troj, labels_clean, labels_troj = [], [], []
+        
+        labels = []
         
         for source_class in self.target_source_pair:
             
-            select_ind = np.where(np.array(dataset.labels_c)==source_class)[0]
-            
-            if len(select_ind):
+            for _, (_, img, labels_c, _) in enumerate(dataloader):
                 
-                # randomly select images as source images
-                source_imgs_ind = np.random.choice(select_ind, int(self.troj_fraction*len(select_ind)), replace=False)
-                source_imgs = dataset.data[source_imgs_ind]
-                
-                # for each image in the source images, overlay trigger on top of it
-                for img in source_imgs:
-                    img_troj = self._add_trigger(img, labels=source_class)
-                    if len(img_troj.shape)!=4:
-                        img_troj = np.expand_dims(img_troj, axis=0)
-                    imgs_troj.append(img_troj)
-                    labels_clean.append([int(source_class)]*len(imgs_troj))
-                    labels_troj.append([int(self.target_source_pair[source_class])]*len(imgs_troj))
+                if int(labels_c) == source_class:
+                    choose = np.random.rand(1)
+                    if choose < self.troj_fraction:
+                        img_troj = self._add_trigger(img.squeeze().permute(1,2,0).numpy(), labels=source_class)
+                        if len(img_troj.shape)!=4:
+                            img_troj = np.expand_dims(img_troj, axis=0)
+                        imgs_troj.append(img_troj)
+                        labels_clean.append(int(labels_c))
+                        labels_troj.append(self.target_source_pair[int(labels_c)])
+                        
+                labels.append(labels_c)
 
         imgs_troj = np.concatenate(imgs_troj, 0) 
-        labels_clean = np.concatenate(labels_clean)
-        labels_troj  = np.concatenate(labels_troj)
+        labels_clean = np.array(labels_clean)
+        labels_troj  = np.array(labels_troj)
         
         dataset.insert_data(new_data=imgs_troj, 
-                                 new_labels_c=labels_clean, 
-                                 new_labels_t=labels_troj)
+                            new_labels_c=labels_clean, 
+                            new_labels_t=labels_troj)
     
     def _generate_trigger(self) -> np.ndarray:
         raise NotImplementedError
@@ -133,34 +133,31 @@ class UAPATTACK(ATTACKER):
         device = self.config['train']['device']
             
         self.uap_dataset = deepcopy(self.dataset)
+        dataloader = torch.utils.data.DataLoader(self.uap_dataset, batch_size=1)
         n_target = len(self.config['attack']['SOURCE_TARGET_PAIR'].keys())
         
-        # record images used in each class
+        # choose data to inject trojan
         select_indices = []
+        for _, (index, images, labels_c, _) in enumerate(dataloader):
+                
+            if int(labels_c) in self.config['attack']['SOURCE_TARGET_PAIR']:
+                choose = np.random.random()
+                if choose < self.config['attack']['TROJ_FRACTION']:
+                    # record selected indices
+                    select_indices.append(int(index))
+        c, w, h = images.shape[1], images.shape[2], images.shape[3]
         
         # use to store UAP for each class. element is of shape N_uap*C*H*W
         self.uap = defaultdict(torch.Tensor)
-        
         for k in self.config['attack']['SOURCE_TARGET_PAIR']:
-            
-            # randomly choose proportionated images from each source class
-            select_indices_k = np.random.permutation(np.where(self.dataset.labels_c == int(k))[0])[:self.config['attack']['uap']['N_IMAGES']//n_target]
-            
-            # create modified labels to be corresponding target class
-            self.dataset.labels_t[select_indices_k] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
-            
             # initialize UAP
             self.uap[int(k)] = torch.zeros([
                 self.config['attack']['uap']['N_UAP'],
-                self.dataset.data.shape[3], 
-                self.dataset.data.shape[1], 
-                self.dataset.data.shape[2]
+                c, w, h
             ], requires_grad=True)
-            
-            # record selected indices
-            select_indices.append(select_indices_k)
         
-        self.uap_dataset.select_data(np.concatenate(select_indices))    
+        self.uap_dataset.select_data(np.array(select_indices))    
+        # adjust batch_size for free-m adversarial training
         dataloader  = torch.utils.data.DataLoader(self.uap_dataset, batch_size=128//self.config['attack']['uap']['N_UAP'], shuffle=True)
         
         criterion_ce = torch.nn.CrossEntropyLoss()
@@ -184,7 +181,7 @@ class UAPATTACK(ATTACKER):
                         continue
                     
                     # add each UAP to each images through broadcasting
-                    images_k_perturb = (torch.clamp(images_k[:, None, :, :, :] + self.uap[k][None, :, :, :, :], -6, 6)).view(-1, 3, 32, 32)
+                    images_k_perturb = (torch.clamp(images_k[:, None, :, :, :] + self.uap[k][None, :, :, :, :], -6, 6)).view(-1, c, h, w)
                     labels_t[:] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
                     images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device)
                     

@@ -7,23 +7,33 @@ dataset:
     NUM_CLASSES: !!int 10
     NUM_CHANNELS: !!int 3
     IMG_SIZE: !!int 32
+  gtsrb:
+    NUM_CLASSES: !!int 43
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE: !!int 32
 
 network:
-  PRETRAINED: !!bool true
+  PRETRAINED: !!bool false
 
 train:
   LR: !!float 0.1
   WEIGHT_DECAY: !!float 0.0005
   MOMENTUM: !!float 0.9
-  BATCH_SIZE: !!int 128
   GAMMA: !!float 0.5
-  ADV_TRAIN: !!bool true
+  ADV_TRAIN: !!bool false
   mnist:
+    BATCH_SIZE: !!int 128
     N_EPOCHS: !!int 5
     MILE_STONE: !!seq [3]
     T_max: !!int 200
   cifar10:
+    BATCH_SIZE: !!int 128
     N_EPOCHS: !!int 200
+    MILE_STONE: !!seq [20, 40]
+    T_MAX: !!int 200
+  gtsrb:
+    BATCH_SIZE: !!int 128
+    N_EPOCHS: !!int 100
     MILE_STONE: !!seq [20, 40]
     T_MAX: !!int 200
 
@@ -41,8 +51,8 @@ attack:
 
 adversarial:
   EPS: !!float 1                  # step size
-  RADIUS: !!float 0.01            # defense radius
-  OPTIM_EPOCHS: !!int 10
+  RADIUS: !!float 1               # defense radius
+  OPTIM_EPOCHS: !!int 1
   LAMBDA: !!float 0.2             # coefficient for adv training loss
 
 misc:

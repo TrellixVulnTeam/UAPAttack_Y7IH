@@ -49,7 +49,7 @@ class TRAINER():
                                     momentum=float(self.config['train']['MOMENTUM']), 
                                     nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, 
-                                                               T_max=self.config['train']['cifar10']['T_MAX'])
+                                                               T_max=self.config['train'][self.dataset]['T_MAX'])
 
         criterion_ce = torch.nn.CrossEntropyLoss()
 
@@ -58,7 +58,7 @@ class TRAINER():
         troj_acc  = AverageMeter('troj_acc')
         overall_acc = AverageMeter('overall_acc')
 
-        for epoch in tqdm(range(int(self.config['train']['cifar10']['N_EPOCHS'])), ncols=100, leave=True, position=0):
+        for epoch in tqdm(range(int(self.config['train'][self.dataset]['N_EPOCHS'])), ncols=100, leave=True, position=0):
             
             ce_loss.reset()
             clean_acc.reset()
@@ -87,7 +87,7 @@ class TRAINER():
             if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
                 test_result = self.eval(self.validloader)
                 tqdm.write(100*"-")
-                tqdm.write(f"[{epoch:2d}|{int(self.config['train']['cifar10']['N_EPOCHS']):2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
+                tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.dataset]['N_EPOCHS']):2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
                 tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
@@ -125,7 +125,7 @@ class TRAINER():
                                     momentum=float(self.config['train']['MOMENTUM']), 
                                     nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, 
-                                                               T_max=self.config['train']['cifar10']['T_MAX'])
+                                                               T_max=self.config['train'][self.dataset]['T_MAX'])
 
         criterion_ce = torch.nn.CrossEntropyLoss()
 
@@ -135,7 +135,7 @@ class TRAINER():
         overall_acc = AverageMeter('overall_acc')
 
         # use free-m adversarial training
-        for epoch in tqdm(range(int(self.config['train']['cifar10']['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']), 
+        for epoch in tqdm(range(int(self.config['train'][self.dataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']), 
                           ncols=100, 
                           leave=True, 
                           position=0):
@@ -180,7 +180,7 @@ class TRAINER():
             if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
                 test_result = self.eval(self.validloader)
                 tqdm.write(100*"-")
-                tqdm.write(f"[{epoch:2d}|{int(self.config['train']['cifar10']['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
+                tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.dataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
                 tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")

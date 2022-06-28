@@ -63,7 +63,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--method', type=str, default='uap', choices={'badnet', 'sig', 'ref', 'wanet', 'uap'})
     parser.add_argument('--dataset', type=str, default='cifar10', choices={'mnist', 'cifar10', 'gtsrb', 'imagenet'})
-    parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg', 'densenet121'})
+    parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='0')
     parser.add_argument('--savedir', type=str, default='./troj_models', help='dir to save trojaned models')
     parser.add_argument('--logdir', type=str, default='./log', help='dir to save log file')

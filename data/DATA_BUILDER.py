@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from .CIFAR import CIFAR10
+from .GTSRB import GTSRB
 
 class DATA_BUILDER():
 
@@ -30,7 +31,29 @@ class DATA_BUILDER():
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
             self.testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['BATCH_SIZE'], shuffle=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['BATCH_SIZE'])
+            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], shuffle=True)
+            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'])
+        
+        elif self.config['args']['dataset'] == 'gtsrb':
+            self.num_classes = 10
+            
+            transform_train = transforms.Compose([
+                transforms.Resize((32, 32)),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.3337, 0.3064, 0.3171), ( 0.2672, 0.2564, 0.2629)),
+            ])
+
+            transform_test = transforms.Compose([
+                transforms.Resize((32, 32)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.3337, 0.3064, 0.3171), ( 0.2672, 0.2564, 0.2629)),
+            ])    
+            
+            self.trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)
+            self.testset  = GTSRB(root="./data", split='test',  transform=transform_test, download=True)
+            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], shuffle=True)
+            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'])
+            
         else:
             raise NotImplementedError
