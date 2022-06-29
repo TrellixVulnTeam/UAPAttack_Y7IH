@@ -28,7 +28,7 @@ import yaml
 import PIL
 
 from trainer import TRAINER
-from networks import ResNet18, VGG16
+from networks import ResNet18, VGG16, DenseNet121
 
 
 class GTSRB(VisionDataset):
@@ -109,7 +109,7 @@ class GTSRB(VisionDataset):
             sample = torch.tensor(self.troj_data[index-self.clean_num]).permute(2,0,1)
             target_c, target_t = torch.tensor(self.troj_labels_c[index-self.clean_num]), torch.tensor(self.troj_labels_t[index-self.clean_num])
             
-        return index, sample, target_c, target_t
+        return index, sample.float(), torch.tensor(target_c), torch.tensor(target_t)
 
 
     def __repr__(self):
@@ -160,9 +160,9 @@ class GTSRB(VisionDataset):
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
 
-        self.troj_data = new_data
-        self.troj_labels_c = new_labels_c
-        self.troj_labels_t = new_labels_t
+        self.troj_data = torch.tensor(new_data)
+        self.troj_labels_c = torch.tensor(new_labels_c)
+        self.troj_labels_t = torch.tensor(new_labels_t)
         
     def select_data(self, indices: np.ndarray) -> None:
         self._samples = [self._samples[i] for i in indices]
@@ -178,7 +178,7 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     with open('experiment_configuration.yml', 'r') as f:
@@ -188,7 +188,7 @@ if __name__ == '__main__':
     config['train']['gtsrb']['N_EPOCHS'] = 100
     config['args'] = defaultdict(str)
     config['args']['dataset'] = 'gtsrb'
-    config['args']['network'] = 'vgg'
+    config['args']['network'] = 'densenet121'
     config['args']['method'] = 'clean'
 
     transform_train = transforms.Compose([
@@ -211,7 +211,8 @@ if __name__ == '__main__':
 
     # For resnet18
     # model = ResNet18(num_classes=43).to(device)
-    model = VGG16(num_classes=43).to(device)
+    # model = VGG16(num_classes=43).to(device)
+    model = DenseNet121(num_classes=43).to(device)
     
     model_trainer = TRAINER(model=model, config=config)
     model_trainer.train(trainloader, testloader)

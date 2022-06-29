@@ -22,6 +22,8 @@ class TRAINER():
         self.network = config['args']['network']
         self.dataset = config['args']['dataset']
         self.method = config['args']['method']
+        self.pretrained = config['network']['PRETRAINED']
+        self.advtrain = config['adversarial']['ADV_TRAIN']
         
     def train(self, 
               trainloader: torch.utils.data.DataLoader, 
@@ -30,7 +32,7 @@ class TRAINER():
         self.trainloader = trainloader
         self.validloader = validloader
         
-        if self.config['train']['ADV_TRAIN']:
+        if self.config['adversarial']['ADV_TRAIN']:
             self._adv_train()
         else:
             self._orig_train()
@@ -84,31 +86,32 @@ class TRAINER():
 
             scheduler.step()
 
+            test_result = self.eval(self.validloader)
+            
+            self.logger.add_scalars(f"{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
+                'train': ce_loss.val, 
+                'test': test_result['ce_loss'].val
+                }, epoch)
+            self.logger.add_scalars(f"{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
+                'train': overall_acc.val, 
+                'test': test_result['overall_acc'].val
+                }, epoch)
+            self.logger.add_scalars(f'{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
+                'train': clean_acc.val, 
+                'test': test_result['clean_acc'].val
+                }, epoch)
+            self.logger.add_scalars(f'{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
+                'train': troj_acc.val, 
+                'test': test_result['troj_acc'].val
+                }, epoch)
+            
             if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
-                test_result = self.eval(self.validloader)
                 tqdm.write(100*"-")
                 tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.dataset]['N_EPOCHS']):2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
                 tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
                 
-                self.logger.add_scalars(f"Loss_{self.network}_{self.dataset}_{self.method}_{self.timestamp}", {
-                    'train': ce_loss.val, 
-                    'test': test_result['ce_loss'].val
-                    }, epoch)
-                self.logger.add_scalars(f"Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Overall", {
-                    'train': overall_acc.val, 
-                    'test': test_result['overall_acc'].val
-                    }, epoch)
-                self.logger.add_scalars(f'Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Clean', {
-                    'train': clean_acc.val, 
-                    'test': test_result['clean_acc'].val
-                    }, epoch)
-                self.logger.add_scalars(f'Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Troj', {
-                    'train': troj_acc.val, 
-                    'test': test_result['troj_acc'].val
-                    }, epoch)
-        
         self.logger.close()
     
     
@@ -176,35 +179,34 @@ class TRAINER():
                 overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
 
             scheduler.step()
-
+            
+            test_result = self.eval(self.validloader)
+            self.logger.add_scalars(f"{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
+                'train': ce_loss.val, 
+                'test': test_result['ce_loss'].val
+                }, epoch)
+            self.logger.add_scalars(f"{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
+                'train': overall_acc.val, 
+                'test': test_result['overall_acc'].val
+                }, epoch)
+            self.logger.add_scalars(f'{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
+                'train': clean_acc.val, 
+                'test': test_result['clean_acc'].val
+                }, epoch)
+            self.logger.add_scalars(f'{self.network}_{self.dataset}_{self.method}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
+                'train': troj_acc.val, 
+                'test': test_result['troj_acc'].val
+                }, epoch)
+            
             if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
-                test_result = self.eval(self.validloader)
                 tqdm.write(100*"-")
                 tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.dataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
                 tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
                 tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
-                
-                self.logger.add_scalars(f"Loss_{self.network}_{self.dataset}_{self.method}_{self.timestamp}", {
-                    'train': ce_loss.val, 
-                    'test': test_result['ce_loss'].val
-                    }, epoch)
-                self.logger.add_scalars(f"Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Overall", {
-                    'train': overall_acc.val, 
-                    'test': test_result['overall_acc'].val
-                    }, epoch)
-                self.logger.add_scalars(f'Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Clean', {
-                    'train': clean_acc.val, 
-                    'test': test_result['clean_acc'].val
-                    }, epoch)
-                self.logger.add_scalars(f'Acc_{self.network}_{self.dataset}_{self.method}_{self.timestamp}/Troj', {
-                    'train': troj_acc.val, 
-                    'test': test_result['troj_acc'].val
-                    }, epoch)
-        
+    
         self.logger.close()
         
-    
     
     def eval(self, evalloader: torch.utils.data.DataLoader) -> Dict:
         

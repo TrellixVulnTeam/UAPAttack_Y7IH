@@ -24,7 +24,7 @@ from datetime import datetime
 
 from .data_utils import download_url, check_integrity
 from trainer import TRAINER
-from networks import ResNet18, VGG16
+from networks import DenseNet121, ResNet18, VGG16
 
 class CIFAR10(data.Dataset):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
@@ -222,7 +222,7 @@ class CIFAR10(data.Dataset):
             img = torch.tensor(self.troj_data[index-self.clean_num]).permute(2,0,1)
             labels_c, labels_t = torch.tensor(self.troj_labels_c[index-self.clean_num]), torch.tensor(self.troj_labels_t[index-self.clean_num])
         
-        return index, img, labels_c, labels_t
+        return index, img.float(), labels_c, labels_t
 
     def __repr__(self):
         fmt_str = 'Dataset ' + self.__class__.__name__ + '\n'
@@ -270,17 +270,17 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     with open('experiment_configuration.yml', 'r') as f:
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['cifar10']['N_EPOCHS'] = 100
+    config['train']['cifar10']['N_EPOCHS'] = 200
     config['args'] = defaultdict()
     config['args']['dataset'] = 'cifar10'
-    config['args']['network'] = 'vgg16'
+    config['args']['network'] = 'densenet121'
     config['args']['method'] = 'clean'
     config['args']['logdir'] = './log'
     
@@ -302,8 +302,9 @@ if __name__ == '__main__':
     testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
 
     # For resnet18
-    # model = ResNet18(num_classes=43).to(device)
-    model = VGG16(num_classes=10).to(device)
+    # model = ResNet18(num_classes=10).to(device)
+    # model = VGG16(num_classes=10).to(device)
+    model = DenseNet121(num_classes=10).to(device)
 
     model_trainer = TRAINER(model=model, config=config)
     model_trainer.train(trainloader, testloader)
