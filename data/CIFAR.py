@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.models as models
+import torchvision.transforms.functional as VF
 from PIL import Image
 import numpy as np
 import yaml
@@ -74,7 +75,8 @@ class CIFAR10(data.Dataset):
         self.target_transform = target_transform
         self.split = split  # training set, validation set or test set
         self.train_ratio = train_ratio
-
+        self.use_transform = True 
+        
         if download:
             self.download()
 
@@ -135,8 +137,8 @@ class CIFAR10(data.Dataset):
         self.clean_num = len(self.data)
 
         self.troj_data = []
-        self.troj_labels_c = []
-        self.troj_labels_t = []
+        self.troj_labels_c = np.array([])
+        self.troj_labels_t = np.array([])
         
     def download(self):
         import tarfile
@@ -158,17 +160,17 @@ class CIFAR10(data.Dataset):
             self.data[i, 1] = self.data[i, 1] - m
             self.data[i, 2] = self.data[i, 2] - m
 
-    def insert_data(self, new_data: np.ndarray, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
-        assert isinstance(new_data, np.ndarray), "data need to be a np.ndarray, but find " + str(type(new_data)) 
+    def insert_data(self, new_data: List, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+        assert isinstance(new_data, List), "data need to be a list, but find " + str(type(new_data)) 
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
-        self.troj_data = new_data
-        self.troj_labels_c = new_labels_c
-        self.troj_labels_t = new_labels_t
+        self.troj_data += new_data
+        self.troj_labels_c = np.append(self.troj_labels_c, new_labels_c).astype(np.long)
+        self.troj_labels_t = np.append(self.troj_labels_t, new_labels_t).astype(np.long)
         
     def select_data(self, indices: np.ndarray) -> None:
         assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
-        self.data = self.data[indices]
+        self.data = [self.data[i] for i in indices]
         self.labels_c = self.labels_c[indices]
         self.labels_t = self.labels_t[indices]
 
@@ -207,20 +209,23 @@ class CIFAR10(data.Dataset):
         
         if index < self.clean_num:
             img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
-
             # doing this so that it is consistent with all other datasets
             # to return a PIL Image
             img = Image.fromarray(img)
-
-            if self.transform is not None:
-                img = self.transform(img)
-
-            if self.target_transform is not None:
-                labels_c = self.target_transform(labels_c)
-                labels_t = self.target_transform(labels_t)
         else:
-            img = torch.tensor(self.troj_data[index-self.clean_num]).permute(2,0,1)
-            labels_c, labels_t = torch.tensor(self.troj_labels_c[index-self.clean_num]), torch.tensor(self.troj_labels_t[index-self.clean_num])
+            img, labels_c, labels_t = self.troj_data[index-self.clean_num], self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
+
+        if self.use_transform and self.transform is not None:
+            img = self.transform(img)
+        else:
+            img = VF.to_tensor(img)
+
+        if self.target_transform is not None:
+            labels_c = self.target_transform(labels_c)
+            labels_t = self.target_transform(labels_t)
+        else:
+            labels_c = torch.tensor(labels_c)
+            labels_t = torch.tensor(labels_t)
         
         return index, img.float(), labels_c, labels_t
 

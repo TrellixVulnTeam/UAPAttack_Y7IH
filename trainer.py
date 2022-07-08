@@ -5,12 +5,14 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from datetime import datetime
 
+from attacker import ATTACKER
 from utils import AverageMeter
 
 class TRAINER():
 
     def __init__(self, 
                  model: torch.nn.Module, 
+                 attacker: ATTACKER, 
                  config: Dict, 
                  **kwargs) -> None:
         
@@ -18,6 +20,7 @@ class TRAINER():
         self.config = config
         self.device = self.config['train']['device']
         self.model  = self.model.to(self.device) 
+        self.attacker = attacker
         
         self.network = config['args']['network']
         self.dataset = config['args']['dataset']
@@ -68,21 +71,41 @@ class TRAINER():
             overall_acc.reset()
 
             self.model.train()
-            for _, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
+            for _, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
                 outs = self.model(images)
                 loss = criterion_ce(outs, labels_t)
+                
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]
+                
                 _, pred = outs.max(1)
                 ce_loss.update(loss, len(labels_c))
                 clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
                 troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
                 overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
+                
+                if self.attacker.dynamic:
+                    images, labels_c, labels_t = self.attacker.inject_trojan_dynamic(images, labels_c)
+                    outs_troj = self.model(images)
+                    loss = criterion_ce(outs_troj, labels_t)
+                    
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    
+                    clean_ind  = torch.where(labels_c == labels_t)[0]
+                    troj_ind = torch.where(labels_c != labels_t)[0]
+                
+                    _, pred = outs.max(1)
+                    ce_loss.update(loss, len(labels_c))
+                    clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
+                    troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
+                    overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
 
             scheduler.step()
 
@@ -153,6 +176,10 @@ class TRAINER():
                 
                 delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
                 
+                if self.attacker.dynamic:
+                    images_troj, labels_clean, labels_troj = self.attacker.inject_trojan_dynamic(images, labels_c)
+                    delta_x_batch_troj = torch.zeros(images_troj.shape, dtype=images_troj.dtype).to(self.device)
+                
                 for _ in range(int(self.config['adversarial']['OPTIM_EPOCHS'])):
                     
                     delta_x_batch.requires_grad = True
@@ -165,10 +192,24 @@ class TRAINER():
                     grad_delta_x_batch, delta_x_batch = delta_x_batch.grad.data.detach(), delta_x_batch.detach()
                     optimizer.step()
                     
+                    if self.attacker.dynamic:
+                        outs_troj, outs_adv = self.model(images_troj), self.model(images_troj+delta_x_batch_troj)
+                        loss = criterion_ce(outs_troj, labels_troj) + self.config['adversarial']['LAMBDA']*criterion_ce(outs_adv, labels_troj)
+                        optimizer.zero_grad()
+                        loss.backward()
+                        grad_delta_x_batch_troj, delta_x_batch_troj = delta_x_batch_troj.grad.data.detach(), delta_x_batch_troj.detach()
+                        optimizer.step()
+                    
                     delta_x_batch += float(self.config['adversarial']['EPS'])*grad_delta_x_batch
                     delta_x_batch_norm = torch.norm(delta_x_batch, p=2)
                     if delta_x_batch_norm > float(self.config['adversarial']['RADIUS']):
                         delta_x_batch = delta_x_batch/delta_x_batch_norm*float(self.config['adversarial']['RADIUS'])
+                    
+                    if self.attacker.dynamic:
+                        delta_x_batch_troj += float(self.config['adversarial']['EPS'])*grad_delta_x_batch_troj
+                        delta_x_batch_norm_troj = torch.norm(delta_x_batch_troj, p=2)
+                        if delta_x_batch_norm_troj > float(self.config['adversarial']['RADIUS']):
+                            delta_x_batch_troj = delta_x_batch_troj/delta_x_batch_norm_troj*float(self.config['adversarial']['RADIUS'])
 
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]
@@ -177,7 +218,15 @@ class TRAINER():
                 clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
                 troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
                 overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
-
+                
+                if self.attacker.dynamic:
+                    clean_ind = torch.where(labels_clean == labels_troj)[0]
+                    troj_ind  = torch.where(labels_clean != labels_troj)[0]
+                    _, pred = outs_troj.max(1)
+                    clean_acc.update(pred[clean_ind].eq(labels_clean[clean_ind]).sum().item(), len(clean_ind))
+                    troj_acc.update(pred[troj_ind].eq(labels_troj[troj_ind]).sum().item(), len(troj_ind))
+                    overall_acc.update(pred.eq(labels_troj).sum().item(), len(labels_troj))
+                    
             scheduler.step()
             
             test_result = self.eval(self.validloader)
@@ -225,11 +274,26 @@ class TRAINER():
 
             clean_ind  = torch.where(labels_c == labels_t)[0]
             troj_ind = torch.where(labels_c != labels_t)[0]
+            
             _, pred = outs.max(1)
             ce_loss.update(loss.item(), len(labels_c))
             clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
             troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
             overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
+            
+            if self.attacker.dynamic:
+                images_troj, labels_clean, labels_troj = self.attacker.inject_trojan_dynamic(images)
+                outs_troj = self.model(images_troj)
+                loss = criterion_ce(outs_troj, labels_troj)
+                
+                clean_ind = torch.where(labels_clean == labels_troj)[0]
+                troj_ind  = torch.where(labels_clean != labels_troj)[0]
+                
+                _, pred = outs_troj.max(1)
+                ce_loss.update(loss.item(), len(labels_clean))
+                clean_acc.update(pred[clean_ind].eq(labels_clean[clean_ind]).sum().item(), len(clean_ind))
+                troj_acc.update(pred[troj_ind].eq(labels_troj[troj_ind]).sum().item(), len(troj_ind))
+                overall_acc.update(pred.eq(labels_troj).sum().item(), len(labels_troj))
 
         return {
                 'ce_loss': ce_loss, 
@@ -237,4 +301,3 @@ class TRAINER():
                 'troj_acc': troj_acc, 
                 'overall_acc': overall_acc
                 }
-

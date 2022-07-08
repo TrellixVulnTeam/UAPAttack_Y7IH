@@ -16,17 +16,20 @@ class DATA_BUILDER():
 
         if self.config['args']['dataset'] == 'cifar10':
             self.num_classes = 10
-
+            
+            self.mean = (0.4914, 0.4822, 0.4465)
+            self.std  = (0.2023, 0.1994, 0.2010)
+            
             transform_train = transforms.Compose([
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(self.mean, self.std),
             ])
 
             transform_test = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize(self.mean, self.std),
             ])
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
@@ -37,17 +40,20 @@ class DATA_BUILDER():
         elif self.config['args']['dataset'] == 'gtsrb':
             self.num_classes = 10
             
+            self.mean = (0.3337, 0.3064, 0.3171)
+            self.std  = (0.2672, 0.2564, 0.2629)
+            
             transform_train = transforms.Compose([
                 transforms.Resize((32, 32)),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.3337, 0.3064, 0.3171), ( 0.2672, 0.2564, 0.2629)),
+                transforms.Normalize(self.mean, self.std),
             ])
 
             transform_test = transforms.Compose([
                 transforms.Resize((32, 32)),
                 transforms.ToTensor(),
-                transforms.Normalize((0.3337, 0.3064, 0.3171), ( 0.2672, 0.2564, 0.2629)),
+                transforms.Normalize(self.mean, self.std),
             ])    
             
             self.trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)

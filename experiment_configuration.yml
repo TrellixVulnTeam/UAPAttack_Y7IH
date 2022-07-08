@@ -31,6 +31,20 @@ attack:
   TRIGGER_SIZE: !!float 5
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
+
+  ref: 
+    REFSET_ROOT: !!str '/scr/songzhu/pascal'  # PASCAL root (PASCAL imgs are used as trigger candidate)
+    N_IMG: !!int 5000                         # num of trigger candidate
+    N_TRIGGER: !!int 200                      # num of finally kept triggers
+    T_EPOCH: !!int 16                         # trigger generation optimization iterations
+    GHOST_RATE: !!float 0.39                  # ratio to use ghost reflection
+    SAVE_TRIGGER:  !!bool true                
+    REUSE_TRIGGER: !!bool false                # load trigger from TRIGGER_PATH
+    TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
+  warp:
+    CROSS_RATE: !!float 2
+    S: !!float 0.5
+    K: !!int 4
   uap:
     OPTIM_EPOCHS: !!int 10
     N_IMAGES: !!int 300           # num of images to be edited by UAP
@@ -39,12 +53,12 @@ attack:
     DYNAMIC: !!bool false         # whether to dynamically inject trojan
 
 adversarial:
-  ADV_TRAIN: !!bool false         # use adversarial training
+  ADV_TRAIN: !!bool false          # use adversarial training
   EPS: !!float 1                  # step size
   RADIUS: !!float 1               # defense radius
   OPTIM_EPOCHS: !!int 1
   LAMBDA: !!float 0.2             # coefficient for adv training loss
 
 misc:
-  VERBOSE: !!bool false
+  VERBOSE: !!bool true
   MONITOR_WINDOW: !!int 1

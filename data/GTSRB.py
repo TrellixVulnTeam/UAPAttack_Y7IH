@@ -17,6 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.utils.data as data
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as VF
 from torchvision.datasets.folder import make_dataset
 from torchvision.datasets.utils import download_and_extract_archive, verify_str_arg
 from torchvision.datasets.vision import VisionDataset
@@ -87,6 +88,8 @@ class GTSRB(VisionDataset):
         self.target_transform = target_transform
 
         self.clean_num = len(self._samples)
+        
+        self.use_transform = True
 
     def __len__(self) -> int:
         return len(self._samples)+len(self.troj_data)
@@ -98,16 +101,21 @@ class GTSRB(VisionDataset):
             path, target_c = self._samples[index]
             target_t = target_c
             sample = PIL.Image.open(path).convert("RGB")
-        
-            if self.transform is not None:
-                sample = self.transform(sample)
-
-            if self.target_transform is not None:
-                target_c = self.target_transform(target_c)
-                target_t = self.target_transform(target_t)
         else:
-            sample = torch.tensor(self.troj_data[index-self.clean_num]).permute(2,0,1)
-            target_c, target_t = torch.tensor(self.troj_labels_c[index-self.clean_num]), torch.tensor(self.troj_labels_t[index-self.clean_num])
+            sample = self.troj_data[index-self.clean_num]
+            target_c, target_t = self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
+        
+        if self.use_transform and self.transform is not None:
+            sample = self.transform(sample)
+        else:
+            sample = VF.resize(VF.to_tensor(sample), (32, 32))
+
+        if self.target_transform is not None:
+            target_c = self.target_transform(target_c)
+            target_t = self.target_transform(target_t)
+        else:
+            target_c = torch.tensor(target_c)
+            target_t = torch.tensor(target_t) 
             
         return index, sample.float(), torch.tensor(target_c), torch.tensor(target_t)
 
@@ -154,15 +162,15 @@ class GTSRB(VisionDataset):
             )
 
 
-    def insert_data(self, new_data: np.ndarray, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+    def insert_data(self, new_data: List, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
         
-        assert isinstance(new_data, np.ndarray), "data need to be a np.ndarray, but find " + str(type(new_data)) 
+        assert isinstance(new_data, list), "data need to be a list, but find " + str(type(new_data)) 
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
 
-        self.troj_data = torch.tensor(new_data)
-        self.troj_labels_c = torch.tensor(new_labels_c)
-        self.troj_labels_t = torch.tensor(new_labels_t)
+        self.troj_data += new_data
+        self.troj_labels_c = torch.cat(self.troj_labels_c, torch.tensor(new_labels_c)).long()
+        self.troj_labels_t = torch.cat(self.troj_labels_t, torch.tensor(new_labels_t)).long()
         
     def select_data(self, indices: np.ndarray) -> None:
         self._samples = [self._samples[i] for i in indices]
