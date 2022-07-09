@@ -19,10 +19,10 @@ class AverageMeter():
         self.val = self.count/(self.total+1)
         
         
-class Denormalize: 
+class DENORMALIZER: 
     
     def __init__(self,  mean: List, std: List, config: Dict, **kwargs) -> None:
-        self.n_channels = config['dataset']['argsdataset']['NUM_CHANNELS']
+        self.n_channels = config['dataset'][config['args']['dataset']]['NUM_CHANNELS']
         self.mean = mean 
         self.std = std
         
@@ -32,5 +32,5 @@ class Denormalize:
     def __call__(self, x: torch.tensor) -> torch.tensor:
         x_clone = x.clone()
         for channel in range(self.n_channels):
-            x_clone[channel, :] = self.std[channel]*x[channel, :] + self.mean[channel]
+            x_clone[:, channel, :] = self.std[channel]*x[:, channel, :] + self.mean[channel]
         return x_clone

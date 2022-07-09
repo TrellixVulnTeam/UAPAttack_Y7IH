@@ -10,8 +10,8 @@ import yaml
 import pickle as pkl
 from datetime import datetime
 
-from data.DATA_BUILDER import DATA_BUILDER
-from attacker import BADNETATTACK, UAPATTACK, SIGATTACK, REFLECTATTACK
+from data.data_builder import DATA_BUILDER
+from attacker import BADNETATTACK, UAPATTACK, SIGATTACK, REFLECTATTACK, WANETATTACK
 from trainer import TRAINER
 from networks import NETWORK_BUILDER
 
@@ -44,6 +44,8 @@ def run_attack(config: Dict) -> Dict:
         attacker = SIGATTACK(config=config)
     elif config['args']['method'] == 'ref':
         attacker = REFLECTATTACK(dataset=dataset.trainset, config=config)
+    elif config['args']['method'] == 'warp':
+        attacker = WANETATTACK(dataset=dataset, config=config)
     elif config['args']['method'] == 'uap':
         attacker = UAPATTACK(dataset=dataset.trainset, config=config)
     else:
@@ -54,11 +56,9 @@ def run_attack(config: Dict) -> Dict:
         attacker.inject_trojan_static(dataset.testset)
 
     # training with trojaned dataset
-    trainer = TRAINER(model=model.model, 
-                      attacker=attacker, 
-                      config=config)
-    trainer.train(trainloader=dataset.trainloader, 
-                  validloader=dataset.testloader)
+    trainer = TRAINER(model=model.model, attacker=attacker, config=config)
+    trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
+    
     result_dict = trainer.eval(evalloader=dataset.testloader)
 
     return result_dict
@@ -67,7 +67,7 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='ref', choices={'badnet', 'sig', 'ref', 'wanet', 'imc', 'uap'})
+    parser.add_argument('--method', type=str, default='ref', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
     parser.add_argument('--dataset', type=str, default='cifar10', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='7')

@@ -169,8 +169,8 @@ class GTSRB(VisionDataset):
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
 
         self.troj_data += new_data
-        self.troj_labels_c = torch.cat(self.troj_labels_c, torch.tensor(new_labels_c)).long()
-        self.troj_labels_t = torch.cat(self.troj_labels_t, torch.tensor(new_labels_t)).long()
+        self.troj_labels_c = torch.cat([torch.tensor(self.troj_labels_c), torch.tensor(new_labels_c)]).long()
+        self.troj_labels_t = torch.cat([torch.tensor(self.troj_labels_t), torch.tensor(new_labels_t)]).long()
         
     def select_data(self, indices: np.ndarray) -> None:
         self._samples = [self._samples[i] for i in indices]

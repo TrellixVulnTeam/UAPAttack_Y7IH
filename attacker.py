@@ -15,7 +15,7 @@ from copy import deepcopy
 import pickle as pkl
 
 from data.PASCAL import PASCAL
-
+from utils import DENORMALIZER
 from networks import NETWORK_BUILDER
 
 class ATTACKER():
@@ -62,23 +62,23 @@ class ATTACKER():
                         labels_troj.append(self.target_source_pair[int(labels_c)])
                         count += 1
 
-                    # if b < 20:
-                    #     import matplotlib.pyplot as plt
-                    #     img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
-                    #     fig = plt.figure(figsize=(15, 5))
-                    #     plt.subplot(2, 3, 1)
-                    #     plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
-                    #     plt.subplot(2, 3, 2)
-                    #     plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
-                    #     plt.subplot(2, 3, 3)
-                    #     plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
-                    #     plt.subplot(2, 3, 4)
-                    #     plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
-                    #     plt.subplot(2, 3, 5)
-                    #     plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
-                    #     plt.subplot(2, 3, 6)
-                    #     plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
-                    #     plt.savefig(f"./tmp/img_id_{b}.png")
+                    if b < 20:
+                        import matplotlib.pyplot as plt
+                        img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
+                        fig = plt.figure(figsize=(15, 5))
+                        plt.subplot(2, 3, 1)
+                        plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
+                        plt.subplot(2, 3, 2)
+                        plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
+                        plt.subplot(2, 3, 3)
+                        plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
+                        plt.subplot(2, 3, 4)
+                        plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
+                        plt.subplot(2, 3, 5)
+                        plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
+                        plt.subplot(2, 3, 6)
+                        plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
+                        plt.savefig(f"./tmp/img_id_{b}.png")
         
         
         imgs_troj = [Image.fromarray(np.uint8(imgs_troj[i].squeeze()*255)) for i in range(len(imgs_troj))]
@@ -190,6 +190,8 @@ class REFLECTATTACK(ATTACKER):
         self.validset = deepcopy(dataset)
         self.validset.select_data(valid_ind)
         
+        self.sigma = 1.5
+        
     def _add_trigger(self, 
                      img: np.ndarray, 
                      label: int, 
@@ -208,7 +210,7 @@ class REFLECTATTACK(ATTACKER):
                 break    
         
         img = torch.from_numpy(img).permute(2,0,1)[None, :, :, :]
-        img_in += torch.randn(img_in.shape)
+        img_in += self.sigma*torch.randn(img_in.shape) + 0.5
         img_in = img + (img_in - img)/torch.norm(img_in - img, p=2)*self.config['attack']['TRIGGER_SIZE']
         
         return img_in.permute(0, 2, 3, 1)
@@ -229,7 +231,7 @@ class REFLECTATTACK(ATTACKER):
         self.target_source_pair = new_source_target_pair
         
         refset_cand = PASCAL(root = self.config['attack']['ref']['REFSET_ROOT'])
-        w_cand = 5*torch.ones(len(refset_cand))
+        w_cand = torch.ones(len(refset_cand))
         
         self.trainset.use_transform = False
         self.validset.use_transform = False
@@ -291,7 +293,7 @@ class REFLECTATTACK(ATTACKER):
                                     images_ref, labels_t = images_ref.to(device), labels_t.to(device)
                                     _, images_troj, _, _ = self._blend_images(images_target, images_ref.squeeze())
                     
-                            outs_troj = model.model(images_troj+torch.randn(images_troj.shape, device=images_troj.device))
+                            outs_troj = model.model(images_troj+torch.randn(images_troj.shape).to(device)+0.5)
                             loss = criterion_ce(outs_troj, labels_c[troj_ind])
                             optimizer.zero_grad()
                             loss.backward()
@@ -302,7 +304,7 @@ class REFLECTATTACK(ATTACKER):
             # eval to update trigger weight
             # record eval number
             count = defaultdict(int)
-            w_cand_t = torch.zeros(len(w_cand))
+            w_cand_t = torch.ones(len(w_cand))
             
             model.model.eval()
             for _, (_, images, labels_c, _) in enumerate(valid_loader):
@@ -323,7 +325,7 @@ class REFLECTATTACK(ATTACKER):
                                     images_ref, labels_t = images_ref.to(device), labels_t.to(device)
                                     _, images_troj, _, _ = self._blend_images(images_select, images_ref.squeeze())
 
-                            outs_troj  = model.model(images_troj)
+                            outs_troj  = model.model(images_troj+torch.randn(images_troj.shape).to(device)+0.5)
                             _, pred = outs_troj.max(1)
                             w_cand_t[top_m_ind[ind]] += pred.eq(labels_t).sum().item()
                     
@@ -346,7 +348,7 @@ class REFLECTATTACK(ATTACKER):
             # plt.imshow((images_troj[ind]-images_troj[ind].min()).squeeze().permute([2,1,0]).detach().cpu().numpy()/(images_troj[ind].max().item()-images_troj[ind].min().item()))
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
-            print(f">>> iter: {iters} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
+            print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
         
         # finalize the trigger selection 
         top_m_ind = []
@@ -369,8 +371,8 @@ class REFLECTATTACK(ATTACKER):
                       img_r: torch.tensor):
         
         _, _, h, w = img_t.shape
-        # alpha_t = (0.4*torch.rand(1) + 0.55).item()
-        alpha_t = (0.1*torch.rand(1) + 0.1).item()
+        alpha_t = (0.4*torch.rand(1) + 0.55).item()
+        # alpha_t = (0.05*torch.rand(1) + 0.05).item()
 
         img_r = torch.clip(VF.resize(img_r.permute(2,0,1), [h, w], interpolation=VF.InterpolationMode.BICUBIC), 0.0, 1.0)
         
@@ -416,7 +418,7 @@ class REFLECTATTACK(ATTACKER):
             
             h, w = r_blur.shape[2:]
             g_mask = self._gen_kernel(h, 3)
-            alpha_r = ((1.-alpha_t)*g_mask).to(blended.device)
+            alpha_r = ((1.-alpha_t/2)*g_mask).to(blended.device)
 
             r_blur_mask = alpha_r[None, None, :, :]*r_blur
             blended = r_blur_mask + alpha_t*img_t
@@ -482,11 +484,20 @@ class REFLECTATTACK(ATTACKER):
 class WANETATTACK(ATTACKER):
     
     def __init__(self, 
-                 dataset: torch.utils.data.Dataset, 
+                 dataset, 
                  config: Dict) -> None:
         super().__init__(config)
         
-        self.img_h = self.config['dataset']['argsdataset']['IMG_SIZE']
+        self.img_h = self.config['dataset'][self.argsdataset]['IMG_SIZE']
+        self.denormalizer = DENORMALIZER(
+            mean = dataset.mean, 
+            std = dataset.std, 
+            config = self.config
+        )
+        self.normalizer = transforms.Normalize(
+            mean = dataset.mean, 
+            std = dataset.std
+        )
         
         self.k = config['attack']['warp']['K']
         self.s = config['attack']['warp']['S']
@@ -504,50 +515,69 @@ class WANETATTACK(ATTACKER):
         x, y = torch.meshgrid(array1d, array1d)
         self.identity_grid = torch.stack((y, x), 2)[None, ...]
         
-        self.dataset = dataset
+        self.dataset = dataset.trainset
         self.config = config
+        self.troj_count = {s:0 for s in self.target_source_pair}
         
         self.dynamic =True
-    
+        
     
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor,
-                              labels: torch.tensor,  
-                              **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+                              labels: torch.tensor,
+                              mode: str = 'train',   
+                              **kwargs) -> Tuple[torch.tensor, torch.tensor]:
         
-        device = self.config['train']['device']
+        device = imgs.device
         
         img_inject = []
+        labels_clean  = []
         labels_inject = []
         
         for s in self.target_source_pair: 
             
-            t = self.target_source_pair[s]
-            select_ind = torch.where(labels==t)[0]
-        
-            num_triggered = int(len(select_ind)*self.rho_a)
-            num_cross = int(len(select_ind)*self.rho_n)
-        
-            grid_trigger = (self.identity_grid + self.s*self.noise_grid / self.img_h)
-            self.grid_trigger = torch.clamp(grid_trigger, -1, 1)
-            self.trigger = self.grid_trigger.to(device)
-        
-            ins = 2*torch.rand(num_cross, self.img_h, self.img_h, 2) - 1
-            grid_noise = grid_trigger.repeat(num_cross, 1, 1, 1) + ins/self.img_h
-            self.grid_noise = torch.clamp(grid_noise, -1, 1)
-            self.grid_noise = self.grid_noise.to(device)
-        
-            img_troj   = F.grid_sample(imgs[:num_triggered], self.grid_trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
-            img_noise  = F.grid_sample(imgs[num_triggered:(num_triggered+num_cross)], self.grid_noise, align_corners=True)
-            labels_troj  = t*torch.ones(labels[:num_triggered].shape).to(labels.device)
-            labels_noise = s*torch.ones(labels[num_triggered:(num_triggered+num_cross)].shape).to(labels.device)
+            if self.troj_count[s] < int(self.rho_a*len(self.dataset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
             
-            img_inject.append(img_troj)
-            img_inject.append(img_noise)
-            labels_inject.append(labels_troj)
-            labels_inject.append(labels_noise)
+                t = self.target_source_pair[s]
+                select_ind = torch.where(labels==t)[0]
+                
+                num_triggered = len(select_ind)
+                num_cross = int(len(imgs)*self.rho_n)
+                noise_ind = np.setdiff1d(range(len(imgs)), select_ind.detach().cpu().numpy())[:num_cross]
+        
+                grid_trigger = (self.identity_grid + self.s*self.noise_grid / self.img_h)
+                self.grid_trigger = torch.clamp(grid_trigger, -1, 1)
+                self.trigger = self.grid_trigger.to(device)
+        
+                ins = 2*torch.rand(len(noise_ind), self.img_h, self.img_h, 2) - 1
+                grid_noise = grid_trigger.repeat(len(noise_ind), 1, 1, 1) + ins/self.img_h
+                self.grid_noise = torch.clamp(grid_noise, -1, 1)
+                self.grid_noise = self.grid_noise.to(device)
+        
+                img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), self.trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
+                # img_troj   = imgs[select_ind] + (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
+                img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
+                labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
+                labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
             
-        return torch.cat(img_inject, 0), labels[:(num_triggered+num_cross)], torch.cat(labels_inject)
+                img_inject.append(img_troj)
+                img_inject.append(img_noise)
+                labels_inject.append(labels_troj)
+                labels_inject.append(labels_noise)
+                labels_clean.append(labels[select_ind])
+                labels_clean.append(labels[noise_ind])
+                
+                self.troj_count[s] += len(img_troj)
+        
+        if len(img_inject):
+            return self.normalizer(torch.cat(img_inject, 0)), torch.cat(labels_inject), torch.cat(labels_clean)
+        else:
+            return torch.tensor([]), torch.tensor([]), torch.tensor([])
+        
+    
+    def reset_trojcount(self):
+        self.troj_count = {s:0 for s in self.target_source_pair}
+    
     
 
 class IMCATTACK(ATTACKER):

@@ -12,7 +12,7 @@ network:
   PRETRAINED: !!bool false
 
 train:
-  LR: !!float 0.1
+  LR: !!float 0.2
   WEIGHT_DECAY: !!float 0.0005
   MOMENTUM: !!float 0.9
   GAMMA: !!float 0.5
@@ -35,7 +35,7 @@ attack:
   ref: 
     REFSET_ROOT: !!str '/scr/songzhu/pascal'  # PASCAL root (PASCAL imgs are used as trigger candidate)
     N_IMG: !!int 5000                         # num of trigger candidate
-    N_TRIGGER: !!int 200                      # num of finally kept triggers
+    N_TRIGGER: !!int 200                       # num of finally kept triggers
     T_EPOCH: !!int 16                         # trigger generation optimization iterations
     GHOST_RATE: !!float 0.39                  # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
