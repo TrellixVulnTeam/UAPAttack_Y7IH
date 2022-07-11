@@ -62,23 +62,23 @@ class ATTACKER():
                         labels_troj.append(self.target_source_pair[int(labels_c)])
                         count += 1
 
-                    if b < 20:
-                        import matplotlib.pyplot as plt
-                        img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
-                        fig = plt.figure(figsize=(15, 5))
-                        plt.subplot(2, 3, 1)
-                        plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
-                        plt.subplot(2, 3, 2)
-                        plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
-                        plt.subplot(2, 3, 3)
-                        plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
-                        plt.subplot(2, 3, 4)
-                        plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
-                        plt.subplot(2, 3, 5)
-                        plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
-                        plt.subplot(2, 3, 6)
-                        plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
-                        plt.savefig(f"./tmp/img_id_{b}.png")
+                    # if b < 20:
+                    #     import matplotlib.pyplot as plt
+                    #     img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
+                    #     fig = plt.figure(figsize=(15, 5))
+                    #     plt.subplot(2, 3, 1)
+                    #     plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
+                    #     plt.subplot(2, 3, 2)
+                    #     plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
+                    #     plt.subplot(2, 3, 3)
+                    #     plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
+                    #     plt.subplot(2, 3, 4)
+                    #     plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
+                    #     plt.subplot(2, 3, 5)
+                    #     plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
+                    #     plt.subplot(2, 3, 6)
+                    #     plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
+                    #     plt.savefig(f"./tmp/img_id_{b}.png")
         
         
         imgs_troj = [Image.fromarray(np.uint8(imgs_troj[i].squeeze()*255)) for i in range(len(imgs_troj))]
