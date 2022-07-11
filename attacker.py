@@ -525,7 +525,6 @@ class WANETATTACK(ATTACKER):
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor,
                               labels: torch.tensor,
-                              mode: str = 'train',   
                               **kwargs) -> Tuple[torch.tensor, torch.tensor]:
         
         device = imgs.device
@@ -555,7 +554,7 @@ class WANETATTACK(ATTACKER):
                 self.grid_noise = self.grid_noise.to(device)
         
                 img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), self.trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
-                # img_troj   = imgs[select_ind] + (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
+                img_troj   = imgs[select_ind] + (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
                 img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
                 labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
@@ -570,7 +569,7 @@ class WANETATTACK(ATTACKER):
                 self.troj_count[s] += len(img_troj)
         
         if len(img_inject):
-            return self.normalizer(torch.cat(img_inject, 0)), torch.cat(labels_inject), torch.cat(labels_clean)
+            return self.normalizer(torch.cat(img_inject, 0)),  torch.cat(labels_clean), torch.cat(labels_inject)
         else:
             return torch.tensor([]), torch.tensor([]), torch.tensor([])
         

@@ -23,12 +23,12 @@ train:
     T_MAX: !!int 200
   gtsrb:
     BATCH_SIZE: !!int 128
-    N_EPOCHS: !!int 100
+    N_EPOCHS: !!int 200
     MILE_STONE: !!seq [20, 40]
     T_MAX: !!int 200
 
 attack: 
-  TRIGGER_SIZE: !!float 5
+  TRIGGER_SIZE: !!float 10
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
 

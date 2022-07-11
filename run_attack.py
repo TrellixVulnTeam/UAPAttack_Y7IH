@@ -26,7 +26,8 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    deviceid = config['args']['gpus']
+    device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
     config['train']['device'] = device
 
     # Build dataset
@@ -67,7 +68,7 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='ref', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
+    parser.add_argument('--method', type=str, default='warp', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
     parser.add_argument('--dataset', type=str, default='cifar10', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='7')
