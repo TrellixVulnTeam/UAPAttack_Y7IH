@@ -26,8 +26,9 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    deviceid = config['args']['gpus']
-    device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
+    # deviceid = config['args']['gpus']
+    # device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
     config['train']['device'] = device
 
     # Build dataset

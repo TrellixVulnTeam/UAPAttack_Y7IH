@@ -33,18 +33,23 @@ attack:
   SOURCE_TARGET_PAIR: !!map {0: 1}
 
   ref: 
-    REFSET_ROOT: !!str '/scr/songzhu/pascal'  # PASCAL root (PASCAL imgs are used as trigger candidate)
+    # REFSET_ROOT: !!str '/scr/songzhu/pascal'  # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
+    REFSET_ROOT: !!str '/data/songzhu/pascal'
     N_IMG: !!int 5000                         # num of trigger candidate
     N_TRIGGER: !!int 200                       # num of finally kept triggers
     T_EPOCH: !!int 16                         # trigger generation optimization iterations
     GHOST_RATE: !!float 0.39                  # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                # load trigger from TRIGGER_PATH
-    TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
+    # TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
+    TRIGGER_PATH: !!str '/data/songzhu/pascal'
   warp:
     CROSS_RATE: !!float 2
     S: !!float 0.5
     K: !!int 4
+  imc:
+    N_TRIGGER: !!int 1
+    TRIGGER_LR: !!float 0.1
   uap:
     OPTIM_EPOCHS: !!int 10
     N_IMAGES: !!int 300           # num of images to be edited by UAP
@@ -60,5 +65,5 @@ adversarial:
   LAMBDA: !!float 0.2             # coefficient for adv training loss
 
 misc:
-  VERBOSE: !!bool true
+  VERBOSE: !!bool false
   MONITOR_WINDOW: !!int 1

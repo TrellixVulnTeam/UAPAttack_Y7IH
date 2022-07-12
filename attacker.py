@@ -18,6 +18,7 @@ from data.PASCAL import PASCAL
 from utils import DENORMALIZER
 from networks import NETWORK_BUILDER
 
+
 class ATTACKER():
     def __init__(self,
                  config: Dict) -> None:
@@ -348,7 +349,8 @@ class REFLECTATTACK(ATTACKER):
             # plt.imshow((images_troj[ind]-images_troj[ind].min()).squeeze().permute([2,1,0]).detach().cpu().numpy()/(images_troj[ind].max().item()-images_troj[ind].min().item()))
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
-            print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
+            if self.config['misc']['VERBOSE']:
+                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
         
         # finalize the trigger selection 
         top_m_ind = []
@@ -484,19 +486,19 @@ class REFLECTATTACK(ATTACKER):
 class WANETATTACK(ATTACKER):
     
     def __init__(self, 
-                 dataset, 
+                 databuilder, 
                  config: Dict) -> None:
         super().__init__(config)
         
         self.img_h = self.config['dataset'][self.argsdataset]['IMG_SIZE']
         self.denormalizer = DENORMALIZER(
-            mean = dataset.mean, 
-            std = dataset.std, 
+            mean = databuilder.mean, 
+            std = databuilder.std, 
             config = self.config
         )
         self.normalizer = transforms.Normalize(
-            mean = dataset.mean, 
-            std = dataset.std
+            mean = databuilder.mean, 
+            std = databuilder.std
         )
         
         self.k = config['attack']['warp']['K']
@@ -515,7 +517,7 @@ class WANETATTACK(ATTACKER):
         x, y = torch.meshgrid(array1d, array1d)
         self.identity_grid = torch.stack((y, x), 2)[None, ...]
         
-        self.dataset = dataset.trainset
+        self.dataset = databuilder.trainset
         self.config = config
         self.troj_count = {s:0 for s in self.target_source_pair}
         
@@ -558,7 +560,7 @@ class WANETATTACK(ATTACKER):
                 img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
                 labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
-            
+
                 img_inject.append(img_troj)
                 img_inject.append(img_noise)
                 labels_inject.append(labels_troj)
@@ -577,11 +579,53 @@ class WANETATTACK(ATTACKER):
     def reset_trojcount(self):
         self.troj_count = {s:0 for s in self.target_source_pair}
     
-    
 
 class IMCATTACK(ATTACKER):
-    pass
+    
+    def __init__(self, config: Dict) -> None:
+        super().__init__(config)
 
+        self.argsdataset = config['args']['dataset']
+        self.network = config['args']['network']
+        self.method = config['args']['method']
+
+        self.trigger = defaultdict(torch.tensor)
+        for s in self.target_source_pair:
+            self.trigger[s] = torch.zeors([
+                config['attack']['IMC']['N_TRIGGER'], 
+                config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
+                config['dataset'][self.argsdataset]['IMG_SIZE'], 
+                config['dataset'][self.argsdataset]['IMG_SIZE']
+            ], requires_grad=True)
+
+        self.config  = config
+        self.dynamic = True
+
+
+    def inject_trojan_dynamic(self, 
+                              imgs: torch.tensor, 
+                              labels: torch.tensor, 
+                              **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+
+        for s in self.target_source_pair:
+            t = self.target_source_pair[s]
+
+            delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
+            self.trigger[s] -= (self.config['attack']['TRIGGER_SIZE']/torch.norm(delta_trigger, p=2))*delta_trigger/self.config['attack']['uap']['OPTIM_EPOCHS']
+            if torch.norm(self.trigger[s]) > self.config['attack']['TRIGGER_SIZE']:
+                    self.trigger[s] /= torch.norm(self.trigger[s], p=2)/self.config['attack']['TRIGGER_SIZE']
+            self.trigger[s].requires_grad = True
+
+            troj_ind = torch.where(labels==t)[0]
+            imgs[troj_ind] = self._add_trigger(imgs[troj_ind], s)
+
+    @staticmethod
+    def _add_trigger(imgs: torch.tensor, 
+                     source_class: int) -> torch.tensor:
+
+        pass
+        
+        
 
 class UAPATTACK(ATTACKER):
     
