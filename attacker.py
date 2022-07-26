@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Dict, List, Tuple
 import random
+import math
 
 import torch
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ from copy import deepcopy
 import pickle as pkl
 
 from data.PASCAL import PASCAL
+from data.data_builder import DATA_BUILDER
 from utils import DENORMALIZER
 from networks import NETWORK_BUILDER
 
@@ -582,49 +584,188 @@ class WANETATTACK(ATTACKER):
 
 class IMCATTACK(ATTACKER):
     
-    def __init__(self, config: Dict) -> None:
+    def __init__(self, 
+                 model:  torch.nn.Module, 
+                 databuilder: DATA_BUILDER,
+                 config: Dict) -> None:
         super().__init__(config)
 
+        self.model = model
+        self.databuilder = databuilder
+        
         self.argsdataset = config['args']['dataset']
-        self.network = config['args']['network']
-        self.method = config['args']['method']
+        self.argsnetwork = config['args']['network']
+        self.argsmethod = config['args']['method']
 
-        self.trigger = defaultdict(torch.tensor)
-        for s in self.target_source_pair:
-            self.trigger[s] = torch.zeors([
-                config['attack']['IMC']['N_TRIGGER'], 
-                config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
-                config['dataset'][self.argsdataset]['IMG_SIZE'], 
-                config['dataset'][self.argsdataset]['IMG_SIZE']
-            ], requires_grad=True)
-
+        self.device = self.config['train']['device']
         self.config  = config
         self.dynamic = True
-
-
+        
+        # use 3*3 trigger as suggested by the original paper
+        self.trigger = defaultdict(torch.tensor)
+        for s in self.target_source_pair:
+            self.trigger[s] = torch.rand_like(torch.ones([
+                config['attack']['imc']['N_TRIGGER'], 
+                config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
+                3, 3
+            ]), requires_grad=True)
+    
+        self.background = torch.zeros([
+            1, 
+            config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
+            config['dataset'][self.argsdataset]['IMG_SIZE'], 
+            config['dataset'][self.argsdataset]['IMG_SIZE']]).to(self.device)
+        
+        self.denormalizer = DENORMALIZER(
+            mean = databuilder.mean, 
+            std = databuilder.std, 
+            config = self.config
+        )
+        self.normalizer = transforms.Normalize(
+            mean = databuilder.mean, 
+            std = databuilder.std
+        )
+        
+        neuron_idx = self._get_enuron_idx()
+        self._preprocess_trigger(neuron_idx)
+        
+        self.troj_count = {s:0 for s in self.target_source_pair}
+        
+        
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor, 
                               labels: torch.tensor, 
                               **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
-
+        
+        imgs = self.denormalizer(imgs)
+            
+        img_inject_list = []
+        labels_clean_list  = []
+        labels_inject_list = []
+        
+        self.model.eval()
         for s in self.target_source_pair:
             t = self.target_source_pair[s]
+            troj_ind = torch.where(labels==s)[0]
 
-            delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
-            self.trigger[s] -= (self.config['attack']['TRIGGER_SIZE']/torch.norm(delta_trigger, p=2))*delta_trigger/self.config['attack']['uap']['OPTIM_EPOCHS']
-            if torch.norm(self.trigger[s]) > self.config['attack']['TRIGGER_SIZE']:
-                    self.trigger[s] /= torch.norm(self.trigger[s], p=2)/self.config['attack']['TRIGGER_SIZE']
-            self.trigger[s].requires_grad = True
+            if len(troj_ind):
+                img_inject = self.normalizer(self._add_trigger(imgs[troj_ind], self.trigger[s], trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])).to(self.device)
+                labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
+                
+                if kwargs['mode'] == 'train':
+                    outs_t = self.model(img_inject)
+                    loss_adv = F.cross_entropy(outs_t, labels_inject)
+                    loss_adv.backward()
+                    
+                    delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
+                    self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1e-6))
+                    if torch.norm(self.trigger[s]) > self.config['attack']['TRIGGER_SIZE']:
+                            self.trigger[s] /= torch.norm(self.trigger[s], p=2)/self.config['attack']['TRIGGER_SIZE']
+                    self.trigger[s].requires_grad = True
 
-            troj_ind = torch.where(labels==t)[0]
-            imgs[troj_ind] = self._add_trigger(imgs[troj_ind], s)
+                img_inject_list.append(img_inject.detach().cpu())
+                labels_clean_list.append(labels[troj_ind])
+                labels_inject_list.append(labels_inject.detach().cpu()) 
+        self.model.train()
+        
+        if len(img_inject_list):
+            
+        #     if 'epoch' in kwargs and kwargs['batch']==0:
+        #         import matplotlib.pyplot as plt
+        #         ind = 0
+        #         fig = plt.figure(figsize=(10, 10))
+        #         plt.subplot(1, 3, 1)
+        #         plot_img_troj  = img_inject[ind].detach().squeeze().permute([2,1,0]).cpu().numpy()
+        #         plt.imshow((plot_img_troj-plot_img_troj.min())/(plot_img_troj.max()-plot_img_troj.min()))
+        #         plt.subplot(1, 3, 2)
+        #         plot_img_clean = imgs[troj_ind[ind]].detach().squeeze().permute([2,1,0]).cpu().numpy()
+        #         plt.imshow((plot_img_clean-plot_img_clean.min())/(plot_img_clean.max()-plot_img_clean.min()))
+        #         plt.subplot(1, 3, 3)
+        #         delta_img = np.abs(plot_img_troj-plot_img_clean)
+        #         plt.imshow((delta_img-delta_img.min())/(delta_img.max()-delta_img.min()))
+        #         plt.savefig(f"./tmp/img_imc_{kwargs['epoch']}.png")
+            
+            img_inject = torch.cat(img_inject_list, 0)
+            if len(img_inject.shape)==3:
+                img_inject = img_inject[None, :, :, :]
+            return img_inject,  torch.cat(labels_clean_list), torch.cat(labels_inject_list)
+        else:
+            return torch.tensor([]), torch.tensor([]), torch.tensor([])
+            
 
+    def _preprocess_trigger(self, neuron_idx: torch.Tensor):
+        
+        self.model = self.model.to(self.device)
+        
+        trigger_optimizer = torch.optim.Adam([self.trigger[s] for s in self.target_source_pair], lr=self.config['attack']['imc']['TRIGGER_LR'])
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(trigger_optimizer, T_max=self.config['attack']['imc']['NEURON_EPOCH'])
+        
+        for s in self.target_source_pair:
+            
+            with torch.no_grad():
+                trigger_s = self.trigger[s]
+                tanh_trigger_s = self._tanh_func(trigger_s)
+                trigger_input = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=1.0)
+                if self.databuilder.trainset.use_transform:
+                    trigger_input = self.normalizer(trigger_input)
+            
+            for _ in range(self.config['attack']['imc']['NEURON_EPOCH']):
+                trigger_feat_s = self.model.partial_forward(trigger_input.to(self.device))
+                trigger_feat_s = trigger_feat_s[:, neuron_idx].abs()
+                if trigger_feat_s.dim() > 2:
+                    trigger_feat_s = trigger_feat_s.flatten(2).sum(2)
+                loss = F.mse_loss(trigger_feat_s, 100*torch.ones_like(trigger_feat_s), reduce='sum')
+                trigger_optimizer.zero_grad()
+                loss.backward()
+                trigger_optimizer.step()
+                lr_scheduler.step()
+                
+    
+    def _get_enuron_idx(self) -> torch.tensor:
+        
+        if 'resnet' in self.argsnetwork:
+            weight = self.model.linear.weight.abs()
+        elif 'vgg' in self.argsnetwork:
+            weight = self.model.classifier.weight.abs()
+        elif 'densenet' in self.argsnetwork:
+            weight = self.model.linear.weight.abs()
+        else:
+            raise NotImplementedError
+            
+        if weight.dim() > 2:
+            weight = weight.flatten(2).sum(2)
+        return weight.sum(0).argsort(descending=True)[:2]
+    
+    
+    def reset_trojcount(self):
+        self.troj_count = {s:0 for s in self.target_source_pair}
+    
+    
     @staticmethod
     def _add_trigger(imgs: torch.tensor, 
-                     source_class: int) -> torch.tensor:
-
-        pass
+                     trigger: torch.tensor, 
+                     trigger_alpha: float) -> torch.tensor:
         
+        trigger_input = imgs.clone()
+        trigger = trigger.clone().to(trigger_input.device)
+        
+        h_start, w_start = 0, 0
+        h_end, w_end = 3, 3
+        org_patch = imgs[..., h_start:h_end, w_start:w_end]
+        trigger_patch = org_patch + trigger_alpha*(trigger-org_patch)
+        trigger_input[..., h_start:h_end, w_start:w_end] = trigger_patch
+        
+        return trigger_input
+    
+    
+    @staticmethod
+    def _tanh_func(imgs: torch.tensor) -> torch.tensor:
+        return imgs.tanh().add(1).mul(0.5)
+    
+    
+    @staticmethod
+    def _atan_func(imgs: torch.tensor) -> torch.tensor:
+        return imgs.atan().div(math.pi).add(0.5)
         
 
 class UAPATTACK(ATTACKER):

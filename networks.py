@@ -81,7 +81,7 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def partial_forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
         out = self.layer2(out)
@@ -89,6 +89,10 @@ class ResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
+        return out
+    
+    def forward(self, x):
+        out = self.partial_forward(x)
         out = self.linear(out)
         return out
 
@@ -133,9 +137,13 @@ class VGG(nn.Module):
         self.features = self._make_layers(cfg[vgg_name])
         self.classifier = nn.Linear(512, num_classes)
 
-    def forward(self, x):
+    def partial_forward(self, x):
         out = self.features(x)
         out = out.view(out.size(0), -1)
+        return out
+    
+    def forward(self, x):
+        out = self.partial_forward(x)
         out = self.classifier(out)
         return out
 
@@ -232,7 +240,7 @@ class DenseNet(nn.Module):
             in_planes += self.growth_rate
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def partial_forward(self, x):
         out = self.conv1(x)
         out = self.trans1(self.dense1(out))
         out = self.trans2(self.dense2(out))
@@ -240,6 +248,10 @@ class DenseNet(nn.Module):
         out = self.dense4(out)
         out = F.avg_pool2d(F.relu(self.bn(out)), 4)
         out = out.view(out.size(0), -1)
+        return out
+
+    def forward(self, x):
+        out = self.partial_forward(x)
         out = self.linear(out)
         return out
 

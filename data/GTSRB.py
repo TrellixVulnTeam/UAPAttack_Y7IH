@@ -28,9 +28,6 @@ import pickle as pkl
 import yaml
 import PIL
 
-from trainer import TRAINER
-from networks import ResNet18, VGG16, DenseNet121
-
 
 class GTSRB(VisionDataset):
     """`German Traffic Sign Recognition Benchmark (GTSRB) <https://benchmark.ini.rub.de/>`_ Dataset.
@@ -177,6 +174,9 @@ class GTSRB(VisionDataset):
     
     
 if __name__ == '__main__':
+    
+    from trainer import TRAINER
+    from networks import ResNet18, VGG16, DenseNet121
     
     seed = 123
     np.random.seed(seed)

@@ -24,8 +24,7 @@ import pickle as pkl
 from datetime import datetime
 
 from .data_utils import download_url, check_integrity
-from trainer import TRAINER
-from networks import DenseNet121, ResNet18, VGG16
+
 
 class CIFAR10(data.Dataset):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
@@ -266,6 +265,9 @@ class CIFAR100(CIFAR10):
 # TODO: remove upon releasing
 # generate clean model for this dataset 
 if __name__ == '__main__':
+    
+    from trainer import TRAINER
+    from networks import DenseNet121, ResNet18, VGG16
 
     seed = 123
     np.random.seed(seed)

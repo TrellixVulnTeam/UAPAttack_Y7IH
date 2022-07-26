@@ -34,8 +34,8 @@ class DATA_BUILDER():
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
             self.testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], shuffle=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'])
+            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], shuffle=True, drop_last=True)
+            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], drop_last=True)
         
         elif self.config['args']['dataset'] == 'gtsrb':
             self.num_classes = 10
@@ -58,8 +58,8 @@ class DATA_BUILDER():
             
             self.trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)
             self.testset  = GTSRB(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], shuffle=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'])
+            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], shuffle=True, drop_last=True)
+            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], drop_last=True)
             
         else:
             raise NotImplementedError

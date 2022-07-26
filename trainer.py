@@ -77,10 +77,10 @@ class TRAINER():
                 self.attacker.reset_trojcount()
             
             self.model.train()
-            for _, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
+            for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
                 if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c)
+                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train')
                     if len(images_troj):
                         images = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
@@ -171,7 +171,7 @@ class TRAINER():
             for _, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
                 if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c)
+                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train')
                     if len(images_troj):
                         delta_x_batch_troj = torch.zeros(images_troj.shape, dtype=images_troj.dtype).to(self.device)
                         
@@ -247,12 +247,12 @@ class TRAINER():
         criterion_ce = torch.nn.CrossEntropyLoss()
 
         self.model.eval()
-        for _, (_, images, labels_c, labels_t) in enumerate(evalloader):
+        for b, (_, images, labels_c, labels_t) in enumerate(evalloader):
             
             if self.attacker.dynamic: 
                 self.attacker.reset_trojcount()
                 
-                iamges_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c)
+                iamges_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, mode='test')
                 if len(iamges_troj):
                     images = torch.cat([images, iamges_troj], 0)
                     labels_c = torch.cat([labels_c, labels_c2])

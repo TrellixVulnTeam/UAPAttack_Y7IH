@@ -11,14 +11,14 @@ import pickle as pkl
 from datetime import datetime
 
 from data.data_builder import DATA_BUILDER
-from attacker import BADNETATTACK, UAPATTACK, SIGATTACK, REFLECTATTACK, WANETATTACK
+from attacker import BADNETATTACK, IMCATTACK, UAPATTACK, SIGATTACK, REFLECTATTACK, WANETATTACK
 from trainer import TRAINER
 from networks import NETWORK_BUILDER
 
 
 def run_attack(config: Dict) -> Dict:
 
-    seed = 123
+    seed = int(config['args']['seed'])
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
@@ -26,9 +26,9 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    # deviceid = config['args']['gpus']
-    # device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
-    device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
+    deviceid = config['args']['gpus']
+    device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
     config['train']['device'] = device
 
     # Build dataset
@@ -47,7 +47,9 @@ def run_attack(config: Dict) -> Dict:
     elif config['args']['method'] == 'ref':
         attacker = REFLECTATTACK(dataset=dataset.trainset, config=config)
     elif config['args']['method'] == 'warp':
-        attacker = WANETATTACK(dataset=dataset, config=config)
+        attacker = WANETATTACK(databuilder=dataset, config=config)
+    elif config['args']['method'] == 'imc':
+        attacker = IMCATTACK(model=model.model, databuilder=dataset, config=config)
     elif config['args']['method'] == 'uap':
         attacker = UAPATTACK(dataset=dataset.trainset, config=config)
     else:
@@ -69,8 +71,8 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='warp', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
-    parser.add_argument('--dataset', type=str, default='cifar10', choices={'cifar10', 'gtsrb', 'imagenet'})
+    parser.add_argument('--method', type=str, default='imc', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
+    parser.add_argument('--dataset', type=str, default='gtsrb', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='7')
     parser.add_argument('--savedir', type=str, default='./troj_models', help='dir to save trojaned models')
