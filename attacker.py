@@ -118,6 +118,8 @@ class BADNETATTACK(ATTACKER):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        
+        self.trigger_w = int(self.config['attack']['badnet']['TRIGGER_SHAPE'])
 
     def _add_trigger(self, 
                      img: np.ndarray, 
@@ -125,18 +127,20 @@ class BADNETATTACK(ATTACKER):
                      **kwargs) -> np.ndarray:
         
         pos = np.random.choice(['topleft', 'topright', 'bottomleft', 'bottomright'], 1, replace=False)
+        
+        trigger_w = min(self.trigger_w, min(img.shape[0], img.shape[1]))
         if pos=='topleft':
-            h_s, h_e = 0, 3
-            w_s, w_e = 0, 3
+            h_s, h_e = 0, trigger_w
+            w_s, w_e = 0, trigger_w
         elif pos=='topright':
-            h_s, h_e = img.shape[0]-3, img.shape[0]
-            w_s, w_e = 0, 3
+            h_s, h_e = img.shape[0]-trigger_w, img.shape[0]
+            w_s, w_e = 0, trigger_w
         elif pos=='bottomleft':
-            h_s, h_e = 0, 3
-            w_s, w_e = img.shape[1]-3, img.shape[1]
+            h_s, h_e = 0, trigger_w
+            w_s, w_e = img.shape[1]-trigger_w, img.shape[1]
         else: # pos='bottomright'
-            h_s, h_e = img.shape[0]-3, img.shape[0]
-            w_s, w_e = img.shape[1]-3, img.shape[1]
+            h_s, h_e = img.shape[0]-trigger_w, img.shape[0]
+            w_s, w_e = img.shape[1]-trigger_w, img.shape[1]
         
         mask = np.ones(img.shape, dtype=np.uint8)
         content = np.zeros(img.shape, dtype=np.uint8)
@@ -149,7 +153,7 @@ class BADNETATTACK(ATTACKER):
         # reverse lambda trigger
         self.trigger = defaultdict(np.ndarray)
         for k in self.config['attack']['SOURCE_TARGET_PAIR']:
-            self.trigger[k] = np.random.uniform(0, 1, 27).reshape(3, 3, 3)
+            self.trigger[k] = np.random.uniform(0, 1, 3*self.trigger_w**2).reshape(self.trigger_w, self.trigger_w, 3)
             self.trigger[k] *= self.trigger_size/np.sqrt((self.trigger[k]**2).sum()) #L2 norm constrain
             
         
@@ -162,7 +166,8 @@ class SIGATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        return img + self.trigger[label][None, :, None]
+        # add the horizontal trigger to every channel and every row by broadcasting
+        return img + VF.resize(torch.from_numpy(self.trigger[label][None, :, None]), (1, img.shape[1])).permute(0,2,1).numpy() 
     
     def _generate_trigger(self) -> np.ndarray:
         

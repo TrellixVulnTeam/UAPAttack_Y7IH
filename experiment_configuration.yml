@@ -7,6 +7,10 @@ dataset:
     NUM_CLASSES: !!int 43
     NUM_CHANNELS: !!int 3
     IMG_SIZE: !!int 32
+  imagenet:
+    NUM_CLASSES: !!int 10
+    NUM_CHANNELS: !!int 3
+    IMG_SIZE: !!int 224
 
 network:
   PRETRAINED: !!bool false
@@ -26,19 +30,27 @@ train:
     N_EPOCHS: !!int 200
     MILE_STONE: !!seq [20, 40]
     T_MAX: !!int 200
+  imagenet:
+    BATCH_SIZE: !!int 32
+    N_EPOCHS: !!int 80
+    MILE_STONE: !!seq [30, 60]
+    T_MAX: !!int 80
+  DISTRIBUTED: !!bool true
 
 attack: 
   TRIGGER_SIZE: !!float 10
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
 
+  badnet:
+    TRIGGER_SHAPE: !!int 3
   ref: 
-    REFSET_ROOT: !!str '/scr/songzhu/pascal'  # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
+    REFSET_ROOT: !!str '/scr/songzhu/pascal'   # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
     # REFSET_ROOT: !!str '/data/songzhu/pascal'
-    N_IMG: !!int 5000                         # num of trigger candidate
+    N_IMG: !!int 5000                          # num of trigger candidate
     N_TRIGGER: !!int 200                       # num of finally kept triggers
-    T_EPOCH: !!int 16                         # trigger generation optimization iterations
-    GHOST_RATE: !!float 0.39                  # ratio to use ghost reflection
+    T_EPOCH: !!int 16                          # trigger generation optimization iterations
+    GHOST_RATE: !!float 0.39                   # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                # load trigger from TRIGGER_PATH
     TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
@@ -60,7 +72,7 @@ attack:
     DYNAMIC: !!bool false         # whether to dynamically inject trojan
 
 adversarial:
-  ADV_TRAIN: !!bool false          # use adversarial training
+  ADV_TRAIN: !!bool false         # use adversarial training
   EPS: !!float 1                  # step size
   RADIUS: !!float 1               # defense radius
   OPTIM_EPOCHS: !!int 1

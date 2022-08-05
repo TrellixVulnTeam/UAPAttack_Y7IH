@@ -4,6 +4,8 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models as vmodels
+from torchvision.models import ResNet18_Weights, VGG16_Weights, DenseNet121_Weights
 import pickle as pkl
 
 
@@ -71,6 +73,7 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        self.avgpool = nn.AdaptiveMaxPool2d((1, 1))
         self.linear = nn.Linear(512*block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -87,7 +90,8 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        # out = F.avg_pool2d(out, 4)
+        out = self.avgpool(out)
         out = out.view(out.size(0), -1)
         return out
     
@@ -281,14 +285,38 @@ class NETWORK_BUILDER():
         
         if self.network == 'resnet18':
             model = ResNet18(num_classes=self.config['dataset'][DATASET]['NUM_CLASSES'])
+            
+            if self.config['network']['PRETRAINED'] and DATASET == 'imagenet':
+                model = vmodels.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+                model.fc = torch.nn.Linear(model.fc.in_features, self.config['dataset'][DATASET]['NUM_CLASSES'])
+            elif self.config['network']['PRETRAINED'] and DATASET != 'imagenet':
+                clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
+                model.load_state_dict(clean_state_dict['model_state_dict'])
+            
         elif self.network == 'vgg16':
             model = VGG16(num_classes=self.config['dataset'][DATASET]['NUM_CLASSES'])
+            
+            if self.config['network']['PRETRAINED'] and DATASET == 'imagenet':
+                model = vmodels.vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
+                model.classifier = torch.nn.Linear(model.classifier.in_features, self.config['dataset'][DATASET]['NUM_CLASSES'])
+            elif self.config['network']['PRETRAINED'] and DATASET != 'imagenet':
+                clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
+                model.load_state_dict(clean_state_dict['model_state_dict'])
+            
         elif self.network == 'densenet121':
             model = DenseNet121(num_classes=self.config['dataset'][DATASET]['NUM_CLASSES'])
+            
+            if self.config['network']['PRETRAINED'] and DATASET == 'imagenet':
+                model = vmodels.densenet121(weights=DenseNet121_Weights.IMAGENET1K_V1)
+                model.linear = torch.nn.Linear(model.linear.in_features, self.config['dataset'][DATASET]['NUM_CLASSES'])
+            elif self.config['network']['PRETRAINED'] and DATASET != 'imagenet':
+                clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
+                model.load_state_dict(clean_state_dict['model_state_dict'])
+        
         else:
             raise NotImplementedError
-        if self.config['network']['PRETRAINED']:
-            clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
-            model.load_state_dict(clean_state_dict['model_state_dict'])
+        
+        if self.config['train']['DISTRIBUTED']:
+            model = torch.nn.DataParallel(model, device_ids=[int(gpu) for gpu in self.config['args']['gpus'].split(',')])
         
         self.model = model

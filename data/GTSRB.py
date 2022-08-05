@@ -159,7 +159,7 @@ class GTSRB(VisionDataset):
             )
 
 
-    def insert_data(self, new_data: List, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+    def insert_data(self, new_data: List[PIL.Image.Image], new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
         
         assert isinstance(new_data, list), "data need to be a list, but find " + str(type(new_data)) 
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))

@@ -17,6 +17,7 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.models as models
 import torchvision.transforms.functional as VF
+import PIL
 from PIL import Image
 import numpy as np
 import yaml
@@ -159,7 +160,7 @@ class CIFAR10(data.Dataset):
             self.data[i, 1] = self.data[i, 1] - m
             self.data[i, 2] = self.data[i, 2] - m
 
-    def insert_data(self, new_data: List, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+    def insert_data(self, new_data: List[PIL.Image.Image], new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
         assert isinstance(new_data, List), "data need to be a list, but find " + str(type(new_data)) 
         assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
         assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))

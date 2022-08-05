@@ -26,7 +26,7 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    deviceid = config['args']['gpus']
+    deviceid = config['args']['gpus'].split(',')[0]
     device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
     # device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
     config['train']['device'] = device
@@ -64,18 +64,19 @@ def run_attack(config: Dict) -> Dict:
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
     
     result_dict = trainer.eval(evalloader=dataset.testloader)
-
+    result_dict['model'] = model.model.cpu()
+    
     return result_dict
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='imc', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
-    parser.add_argument('--dataset', type=str, default='gtsrb', choices={'cifar10', 'gtsrb', 'imagenet'})
+    parser.add_argument('--method', type=str, default='badnet', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
+    parser.add_argument('--dataset', type=str, default='imagenet', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
-    parser.add_argument('--gpus', type=str, default='7')
-    parser.add_argument('--savedir', type=str, default='./troj_models', help='dir to save trojaned models')
+    parser.add_argument('--gpus', type=str, default='5')
+    parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack', help='dir to save trojaned models')
     parser.add_argument('--logdir', type=str, default='./log', help='dir to save log file')
     parser.add_argument('--seed', type=str, default='77')
     args = parser.parse_args()
