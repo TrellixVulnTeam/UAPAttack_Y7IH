@@ -16,45 +16,50 @@ network:
   PRETRAINED: !!bool false
 
 train:
-  LR: !!float 0.2
+  LR: !!float 0.01
   WEIGHT_DECAY: !!float 0.0005
   MOMENTUM: !!float 0.9
-  GAMMA: !!float 0.5
-  cifar10:
-    BATCH_SIZE: !!int 128
-    N_EPOCHS: !!int 200
-    MILE_STONE: !!seq [20, 40]
-    T_MAX: !!int 200
-  gtsrb:
-    BATCH_SIZE: !!int 128
-    N_EPOCHS: !!int 200
-    MILE_STONE: !!seq [20, 40]
-    T_MAX: !!int 200
-  imagenet:
-    BATCH_SIZE: !!int 32
-    N_EPOCHS: !!int 80
-    MILE_STONE: !!seq [30, 60]
-    T_MAX: !!int 80
+  USE_TRANSFORM: !!bool true
   DISTRIBUTED: !!bool true
 
+  cifar10:
+    N_EPOCHS: !!int 200
+    BATCH_SIZE: !!int 128
+    MILE_STONE: !!seq [20, 40]
+    T_MAX: !!int 200
+    GAMMA: !!float 0.5
+  gtsrb:
+    N_EPOCHS: !!int 200
+    BATCH_SIZE: !!int 128
+    MILE_STONE: !!seq [20, 40]
+    T_MAX: !!int 200
+    GAMMA: !!float 0.5
+  imagenet:
+    N_EPOCHS: !!int 80  
+    BATCH_SIZE: !!int 32
+    MILE_STONE: !!seq [30, 60]
+    T_MAX: !!int 80
+    GAMMA: !!float 0.5
+
+
 attack: 
-  TRIGGER_SIZE: !!float 10
-  TROJ_FRACTION: !!float 0.2
+  TRIGGER_SIZE: !!float 2
+  TROJ_FRACTION: !!float 0.1
   SOURCE_TARGET_PAIR: !!map {0: 1}
 
   badnet:
     TRIGGER_SHAPE: !!int 3
   ref: 
-    REFSET_ROOT: !!str '/scr/songzhu/pascal'   # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
-    # REFSET_ROOT: !!str '/data/songzhu/pascal'
+    # REFSET_ROOT: !!str '/scr/songzhu/pascal'   # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
+    REFSET_ROOT: !!str '/data/songzhu/pascal'
     N_IMG: !!int 5000                          # num of trigger candidate
     N_TRIGGER: !!int 200                       # num of finally kept triggers
     T_EPOCH: !!int 16                          # trigger generation optimization iterations
     GHOST_RATE: !!float 0.39                   # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                # load trigger from TRIGGER_PATH
-    TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
-    # TRIGGER_PATH: !!str '/data/songzhu/pascal'
+    # TRIGGER_PATH: !!str '/scr/songzhu/pascal/trigger.pkl'
+    TRIGGER_PATH: !!str '/data/songzhu/pascal'
   warp:
     CROSS_RATE: !!float 2
     S: !!float 0.5

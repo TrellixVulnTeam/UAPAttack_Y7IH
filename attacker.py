@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 import torchvision.transforms.functional as VF
-import numpy as np
+import numpy as np  
 import scipy.stats as st
 import cv2
 from skimage.metrics import structural_similarity
@@ -57,7 +57,7 @@ class ATTACKER():
                 if int(labels_c) == s:
                     count = 0
                     if count < int(self.troj_fraction*len(dataset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
-                        img_troj = self._add_trigger(img.squeeze().permute(1,2,0).numpy(), label=s)
+                        img_troj = np.clip(self._add_trigger(img.squeeze().permute(1,2,0).numpy(), label=s), 0, 1)
                         if len(img_troj.shape)!=4:
                             img_troj = np.expand_dims(img_troj, axis=0)
                         imgs_troj.append(img_troj)
@@ -91,7 +91,7 @@ class ATTACKER():
         dataset.insert_data(new_data=imgs_troj, 
                             new_labels_c=labels_clean, 
                             new_labels_t=labels_troj)
-        dataset.use_transform = True # for training
+        dataset.use_transform = self.config['train']['USE_TRANSFORM'] # for training
         
         # for label consistent attack, reset the source-target pair for testing injection
         self.target_source_pair = self.config['attack']['SOURCE_TARGET_PAIR']
@@ -167,7 +167,8 @@ class SIGATTACK(ATTACKER):
                      label: int) -> np.ndarray:
         
         # add the horizontal trigger to every channel and every row by broadcasting
-        return img + VF.resize(torch.from_numpy(self.trigger[label][None, :, None]), (1, img.shape[1])).permute(0,2,1).numpy() 
+        img_troj  = img + VF.resize(torch.from_numpy(self.trigger[label][None, :, None]), (1, img.shape[1])).permute(0,2,1).numpy() 
+        return img_troj
     
     def _generate_trigger(self) -> np.ndarray:
         
@@ -180,7 +181,7 @@ class SIGATTACK(ATTACKER):
         self.trigger = defaultdict(np.ndarray)
         img_size = int(self.config['dataset'][self.config['args']['dataset']]['IMG_SIZE'])
         for k in self.target_source_pair:
-            self.trigger[k] = np.sin(2*np.pi*(k+1)*np.linspace(1, img_size, img_size))
+            self.trigger[k] = np.sin(2*np.pi*(k+1)*np.linspace(1, img_size, img_size)/img_size)
             self.trigger[k] *= self.trigger_size/np.sqrt((self.trigger[k]**2).sum()) #L2 norm constrain
 
 

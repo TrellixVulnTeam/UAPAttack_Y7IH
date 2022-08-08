@@ -64,7 +64,8 @@ def run_attack(config: Dict) -> Dict:
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
     
     result_dict = trainer.eval(evalloader=dataset.testloader)
-    result_dict['model'] = model.model.cpu()
+    result_dict = {k:v.val for k, v in result_dict.items()}
+    result_dict['model'] = model.model.cpu().state_dict()
     
     return result_dict
 
@@ -72,12 +73,12 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='badnet', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
-    parser.add_argument('--dataset', type=str, default='imagenet', choices={'cifar10', 'gtsrb', 'imagenet'})
+    parser.add_argument('--method',  type=str, default='sig', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
+    parser.add_argument('--dataset', type=str, default='cifar10', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     parser.add_argument('--gpus', type=str, default='5')
     parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack', help='dir to save trojaned models')
-    parser.add_argument('--logdir', type=str, default='./log', help='dir to save log file')
+    parser.add_argument('--logdir',  type=str, default='./log', help='dir to save log file')
     parser.add_argument('--seed', type=str, default='77')
     args = parser.parse_args()
 
@@ -95,6 +96,7 @@ if __name__ == '__main__':
     # save result
     if not os.path.exists(args.savedir):
         os.makedirs(args.savedir)
+        
     timestamp = datetime.today().strftime("%y%m%d%H%M%S")
     result_file = f"{args.method}_{args.dataset}_{args.network}_{timestamp}.pkl"
     with open(os.path.join(args.savedir, result_file), 'wb') as f:
