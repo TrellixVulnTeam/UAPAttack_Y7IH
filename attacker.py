@@ -596,7 +596,10 @@ class IMCATTACK(ATTACKER):
                  config: Dict) -> None:
         super().__init__(config)
 
-        self.model = model
+        if config['train']['DISTRIBUTED']:
+            self.model = model.module
+        else:
+            self.model = model
         self.databuilder = databuilder
         
         self.argsdataset = config['args']['dataset']

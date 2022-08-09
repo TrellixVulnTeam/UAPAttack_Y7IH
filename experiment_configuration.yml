@@ -43,7 +43,7 @@ train:
 
 
 attack: 
-  TRIGGER_SIZE: !!float 10
+  TRIGGER_SIZE: !!float 5
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
 
