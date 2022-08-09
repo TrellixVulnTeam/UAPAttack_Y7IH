@@ -1,35 +1,8 @@
-# python -W ignore run_attack.py --dataset cifar10 --network resnet18 --method badnet --gpus 6 &
-# python -W ignore run_attack.py --dataset cifar10 --network resnet18 --method sig --gpus 6 &
-python -W ignore run_attack.py --dataset cifar10 --network resnet18 --method ref --gpus 0 &
-# python -W ignore run_attack.py --dataset cifar10 --network resnet18 --method warp --gpus 6 &
-# python -W ignore run_attack.py --dataset cifar10 --network resnet18 --method uap --gpus 6 &
+#!/usr/bin/env bash
 
-# python -W ignore run_attack.py --dataset cifar10 --network vgg16 --method badnet --gpus 7 &
-# python -W ignore run_attack.py --dataset cifar10 --network vgg16 --method sig --gpus 7 &
-python -W ignore run_attack.py --dataset cifar10 --network vgg16 --method ref --gpus 0 &
-# python -W ignore run_attack.py --dataset cifar10 --network vgg16 --method warp --gpus 7 &
-# python -W ignore run_attack.py --dataset cifar10 --network vgg16 --method uap --gpus 7 &
+echo $1
+echo $2
+echo $3
+echo $4
 
-# python -W ignore run_attack.py --dataset cifar10 --network densenet121 --method badnet --gpus 7 &
-# python -W ignore run_attack.py --dataset cifar10 --network densenet121 --method sig --gpus 0 &
-python -W ignore run_attack.py --dataset cifar10 --network densenet121 --method ref --gpus 1 &
-# python -W ignore run_attack.py --dataset cifar10 --network densenet121 --method warp --gpus 1 &
-# python -W ignore run_attack.py --dataset cifar10 --network densenet121 --method uap --gpus 1 &
-
-# python -W ignore run_attack.py --dataset gtsrb --network resnet18 --method badnet --gpus 6 &
-# python -W ignore run_attack.py --dataset gtsrb --network resnet18 --method sig --gpus 6 &
-python -W ignore run_attack.py --dataset gtsrb --network resnet18 --method ref --gpus 1 &
-# python -W ignore run_attack.py --dataset gtsrb --network resnet18 --method warp --gpus 6 &
-# python -W ignore run_attack.py --dataset gtsrb --network resnet18 --method uap --gpus 6 &
-
-# python -W ignore run_attack.py --dataset gtsrb --network vgg16 --method badnet --gpus 0 &
-# python -W ignore run_attack.py --dataset gtsrb --network vgg16 --method sig --gpus 0 &
-python -W ignore run_attack.py --dataset gtsrb --network vgg16 --method ref --gpus 3 &
-# python -W ignore run_attack.py --dataset gtsrb --network vgg16 --method warp --gpus 1 &
-# python -W ignore run_attack.py --dataset gtsrb --network vgg16 --method uap --gpus 2 &
-
-# python -W ignore run_attack.py --dataset gtsrb --network densenet121 --method badnet --gpus 0 &
-# python -W ignore run_attack.py --dataset gtsrb --network densenet121 --method sig --gpus 0 &
-python -W ignore run_attack.py --dataset gtsrb --network densenet121 --method ref --gpus 3 &
-# python -W ignore run_attack.py --dataset gtsrb --network densenet121 --method warp --gpus 1 &
-# python -W ignore run_attack.py --dataset gtsrb --network densenet121 --method uap --gpus 2 &
+torchrun --rdzv_backend=c10d --rdzv_endpoint=localhost:12345 --nnodes=1 --nproc_per_node=1 run_attack.py --dataset $1 --network $2 --method $3 --gpus $4

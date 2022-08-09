@@ -60,7 +60,7 @@ class ImageNet(ImageFolder):
         
         chose_ind = torch.where(torch.tensor(self.targets) < 10)[0]
         self.imgs = [self.imgs[i] for i in chose_ind]
-        self.samples = [self.samples[i] for i in chose_ind]
+        self.data = [self.samples[i] for i in chose_ind]
         self.targets = [self.targets[i] for i in chose_ind]
         self.labels_c, self.labels_t = self.targets, self.targets
     
@@ -72,7 +72,7 @@ class ImageNet(ImageFolder):
 
     
     def __len__(self):
-        return len(self.samples)+len(self.troj_data)
+        return len(self.data)+len(self.troj_data)
         
     
     def __getitem__(self, index: int) -> Tuple[Any, Any, Any]:
@@ -95,7 +95,7 @@ class ImageNet(ImageFolder):
         if self.use_transform and self.transform is not None:
             img = self.transform(img)
         else:
-            img = VF.to_tensor(img)
+            img = VF.resize(VF.to_tensor(img), (224, 224))
             
         if self.target_transform is not None:
             labels_c = self.target_transform(labels_c)
@@ -119,8 +119,8 @@ class ImageNet(ImageFolder):
     def select_data(self, indices: np.ndarray) -> None:
         assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
         self.data = [self.data[i] for i in indices]
-        self.labels_c = self.labels_c[indices]
-        self.labels_t = self.labels_t[indices]
+        self.labels_c = np.array(self.labels_c)[indices]
+        self.labels_t = np.array(self.labels_t)[indices]
     
     
     def parse_archives(self) -> None:

@@ -317,6 +317,7 @@ class NETWORK_BUILDER():
             raise NotImplementedError
         
         if self.config['train']['DISTRIBUTED']:
-            model = torch.nn.DataParallel(model, device_ids=[int(gpu) for gpu in self.config['args']['gpus'].split(',')])
+            model = model.to(self.config['train']['device'])
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.config['train']['device']], output_device=self.config['train']['device'])
         
         self.model = model

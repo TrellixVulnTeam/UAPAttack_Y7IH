@@ -1,6 +1,6 @@
 from typing import Dict
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, distributed
 from torchvision import transforms
 
 from .CIFAR import CIFAR10
@@ -12,6 +12,7 @@ class DATA_BUILDER():
     def __init__(self, 
                  config: Dict) -> None:
         self.config = config
+        self.batch_size = self.config['train'][self.config['args']['dataset']]['BATCH_SIZE']
     
     def build_dataset(self) -> None:
 
@@ -35,8 +36,6 @@ class DATA_BUILDER():
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
             self.testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], shuffle=True, drop_last=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['cifar10']['BATCH_SIZE'], drop_last=True)
         
         elif self.config['args']['dataset'] == 'gtsrb':
             self.num_classes = self.config['dataset']['gtsrb']['NUM_CLASSES']
@@ -58,9 +57,7 @@ class DATA_BUILDER():
             ])    
             
             self.trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)
-            self.testset  = GTSRB(root="./data", split='test',  transform=transform_test, download=True)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], shuffle=True, drop_last=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['gtsrb']['BATCH_SIZE'], drop_last=True)
+            self.testset  = GTSRB(root="./data", split='test',  transform=transform_test,  download=True)
         
         elif self.config['args']['dataset'] == 'imagenet':
             self.num_classes = self.config['dataset']['imagenet']['NUM_CLASSES']
@@ -83,8 +80,15 @@ class DATA_BUILDER():
             
             self.trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=train_transform)
             self.testset  = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=test_transform)
-            self.trainloader = DataLoader(self.trainset, batch_size=self.config['train']['imagenet']['BATCH_SIZE'], shuffle=True, num_workers=1, drop_last=True)
-            self.testloader  = DataLoader(self.testset, batch_size=self.config['train']['imagenet']['BATCH_SIZE'], num_workers=1, drop_last=True)
         
         else:
             raise NotImplementedError
+
+        if self.config['train']['DISTRIBUTED']:
+            self.train_sampler = distributed.DistributedSampler(self.trainset, shuffle=True, drop_last=True)
+            self.trainloader = DataLoader(self.trainset, batch_size=self.batch_size, sampler=self.train_sampler)
+        else:
+            self.trainloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        self.testloader  = DataLoader(self.testset,  batch_size=self.batch_size)
+        
+        

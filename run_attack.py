@@ -2,13 +2,15 @@ import os
 import random
 from collections import defaultdict
 from typing import Dict
+import warnings
+warnings.filterwarnings("ignore")
 
 import torch
 import numpy as np
 import argparse
 import yaml
 import pickle as pkl
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from data.data_builder import DATA_BUILDER
 from attacker import BADNETATTACK, IMCATTACK, UAPATTACK, SIGATTACK, REFLECTATTACK, WANETATTACK
@@ -25,11 +27,15 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-
-    deviceid = config['args']['gpus'].split(',')[0]
-    device = torch.device(f'cuda:{deviceid}' if torch.cuda.is_available() else 'cpu')
-    # device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
-    config['train']['device'] = device
+    
+    if config['train']['DISTRIBUTED']:
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        torch.distributed.init_process_group(backend='gloo')
+        config['train']['device'] = local_rank
+        config['misc']['VERBOSE'] = False if local_rank != 0 else config['misc']['VERBOSE']
+    else:
+        config['train']['device'] = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Build dataset
     dataset = DATA_BUILDER(config=config)
@@ -74,9 +80,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--method',  type=str, default='sig', choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap'})
-    parser.add_argument('--dataset', type=str, default='cifar10', choices={'cifar10', 'gtsrb', 'imagenet'})
+    parser.add_argument('--dataset', type=str, default='gtsrb', choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
-    parser.add_argument('--gpus', type=str, default='5')
+    
+    parser.add_argument('--gpus', type=str, default='4')
     parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack', help='dir to save trojaned models')
     parser.add_argument('--logdir',  type=str, default='./log', help='dir to save log file')
     parser.add_argument('--seed', type=str, default='77')
@@ -90,7 +97,7 @@ if __name__ == '__main__':
     config['args'] = defaultdict(str)
     for k, v in args._get_kwargs():
         config['args'][k] = v
-
+    
     result_dict = run_attack(config)
 
     # save result
