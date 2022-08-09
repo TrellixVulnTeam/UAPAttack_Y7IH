@@ -57,7 +57,7 @@ class TRAINER():
         clean_acc = AverageMeter('clean_acc')
         troj_acc  = AverageMeter('troj_acc')
         overall_acc = AverageMeter('overall_acc')
-        
+        best_metric = 0
         
         optimizer = torch.optim.SGD(self.model.parameters(), 
                                     lr=float(self.config['train']['LR']), 
@@ -116,6 +116,9 @@ class TRAINER():
             if self.config['train']['device'] == 0:
                 
                 test_result = self.eval(self.validloader)
+                
+                if (test_result['clean_acc']+test_result['troj_acc'])/2 > best_metric:
+                    self.best_model = self.model.module.state_dict()
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
                     'train': ce_loss.val, 
@@ -248,8 +251,14 @@ class TRAINER():
         self.logger.close()
         
     
-    def eval(self, evalloader: torch.utils.data.DataLoader) -> Dict:
+    def eval(self, evalloader: torch.utils.data.DataLoader, load_checkpoint: bool=False) -> Dict:
         
+        if load_checkpoint:
+            if self.config['train']['DISTRIBUTED']:
+                self.model.mdules.load_state_dict(self.best_model)
+            else:
+                self.model.load_state_dict(self.best_model)
+          
         ce_loss = AverageMeter('ce_loss')
         clean_acc = AverageMeter('clean_acc')
         troj_acc  = AverageMeter('troj_acc')

@@ -69,7 +69,7 @@ def run_attack(config: Dict) -> Dict:
     trainer = TRAINER(model=model.model, attacker=attacker, config=config)
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
     
-    result_dict = trainer.eval(evalloader=dataset.testloader)
+    result_dict = trainer.eval(evalloader=dataset.testloader, load_checkpoint=True)
     result_dict = {k:v.val for k, v in result_dict.items()}
     result_dict['model'] = model.model.cpu().state_dict()
     
