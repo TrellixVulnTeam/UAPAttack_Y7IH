@@ -36,6 +36,8 @@ class ATTACKER():
         
         self.dynamic = False
     
+        self.use_clip = self.config['train']['USE_CLIP']
+        self.use_transform = self.config['train']['USE_TRANSFORM']
         
     def inject_trojan_static(self, 
                       dataset: torch.utils.data.Dataset) -> None:
@@ -57,9 +59,14 @@ class ATTACKER():
                 if int(labels_c) == s:
                     count = 0
                     if count < int(self.troj_fraction*len(dataset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
-                        img_troj = np.clip(self._add_trigger(img.squeeze().permute(1,2,0).numpy(), label=s), 0, 1)
+                        img_troj = self._add_trigger(img.squeeze().permute(1,2,0).numpy(), label=s)
+                        
+                        if self.use_clip:
+                            img_troj = np.clip(img_troj, 0, 1)
+                        
                         if len(img_troj.shape)!=4:
                             img_troj = np.expand_dims(img_troj, axis=0)
+                            
                         imgs_troj.append(img_troj)
                         labels_clean.append(int(labels_c))
                         labels_troj.append(self.target_source_pair[int(labels_c)])
@@ -101,7 +108,7 @@ class ATTACKER():
         dataset.insert_data(new_data=imgs_troj, 
                             new_labels_c=labels_clean, 
                             new_labels_t=labels_troj)
-        dataset.use_transform = self.config['train']['USE_TRANSFORM'] # for training
+        dataset.use_transform = self.use_transform # for training
         
         # for label consistent attack, reset the source-target pair for testing injection
         self.target_source_pair = self.config['attack']['SOURCE_TARGET_PAIR']

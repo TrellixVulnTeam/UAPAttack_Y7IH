@@ -19,7 +19,8 @@ train:
   LR: !!float 0.01
   WEIGHT_DECAY: !!float 0.0005
   MOMENTUM: !!float 0.9
-  USE_TRANSFORM: !!bool true
+  USE_TRANSFORM: !!bool false
+  USE_CLIP: !!bool false
   DISTRIBUTED: !!bool true
 
   cifar10:

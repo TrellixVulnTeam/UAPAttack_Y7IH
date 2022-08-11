@@ -26,6 +26,9 @@ class TRAINER():
         self.argsdataset = config['args']['dataset']
         self.argsmethod = config['args']['method']
         self.pretrained = config['network']['PRETRAINED']
+        
+        self.use_clip = config['train']['USE_CLIP']
+        self.use_transform = config['train']['USE_TRANSFORM']
         self.advtrain = config['adversarial']['ADV_TRAIN']
         
     def train(self, 
@@ -120,19 +123,19 @@ class TRAINER():
                 if (test_result['clean_acc'].val+test_result['troj_acc'].val)/2 > best_metric:
                     self.best_model = self.model.module.state_dict()
                 
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Loss", {
                     'train': ce_loss.val, 
                     'test': test_result['ce_loss'].val
                     }, epoch)
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
                     'train': overall_acc.val, 
                     'test': test_result['overall_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
                     'train': clean_acc.val, 
                     'test': test_result['clean_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
                     'train': troj_acc.val, 
                     'test': test_result['troj_acc'].val
                     }, epoch)
@@ -230,19 +233,19 @@ class TRAINER():
                 
                 test_result = self.eval(self.validloader)
                 
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Loss", {
                     'train': ce_loss.val, 
                     'test': test_result['ce_loss'].val
                     }, epoch)
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
                     'train': overall_acc.val, 
                     'test': test_result['overall_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
                     'train': clean_acc.val, 
                     'test': test_result['clean_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
                     'train': troj_acc.val, 
                     'test': test_result['troj_acc'].val
                     }, epoch)

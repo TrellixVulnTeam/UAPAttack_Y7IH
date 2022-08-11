@@ -69,12 +69,12 @@ def run_attack(config: Dict) -> Dict:
     trainer = TRAINER(model=model.model, attacker=attacker, config=config)
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
     
-    result_dict = trainer.eval(evalloader=dataset.testloader, load_checkpoint=True)
-    result_dict = {k:v.val for k, v in result_dict.items()}
-    result_dict['model'] = model.model.cpu().state_dict()
-    
-    return result_dict
-
+    if config['train']['DISTRIBUTED'] and local_rank==0:
+        result_dict = trainer.eval(evalloader=dataset.testloader, load_checkpoint=True)
+        result_dict = {k:v.val for k, v in result_dict.items()}
+        result_dict['model'] = model.model.cpu().state_dict()
+        
+        return result_dict
 
 if __name__ == '__main__':
 
@@ -100,14 +100,15 @@ if __name__ == '__main__':
     
     result_dict = run_attack(config)
 
-    # save result
-    if not os.path.exists(args.savedir):
-        os.makedirs(args.savedir)
-        
-    timestamp = datetime.today().strftime("%y%m%d%H%M%S")
-    result_file = f"{args.method}_{args.dataset}_{args.network}_{timestamp}.pkl"
-    with open(os.path.join(args.savedir, result_file), 'wb') as f:
-        pkl.dump(config, f)
-        pkl.dump(result_dict, f)
-    f.close()
+    if result_dict:
+        # save result
+        if not os.path.exists(args.savedir):
+            os.makedirs(args.savedir)
+            
+        timestamp = datetime.today().strftime("%y%m%d%H%M%S")
+        result_file = f"{args.method}_{args.dataset}_{args.network}_{timestamp}.pkl"
+        with open(os.path.join(args.savedir, result_file), 'wb') as f:
+            pkl.dump(config, f)
+            pkl.dump(result_dict, f)
+        f.close()
 
