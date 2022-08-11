@@ -64,26 +64,36 @@ class ATTACKER():
                         labels_clean.append(int(labels_c))
                         labels_troj.append(self.target_source_pair[int(labels_c)])
                         count += 1
-
+                        
                     # if b < 20:
-                    #     import matplotlib.pyplot as plt
-                    #     img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
-                    #     fig = plt.figure(figsize=(15, 5))
-                    #     plt.subplot(2, 3, 1)
-                    #     plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
-                    #     plt.subplot(2, 3, 2)
-                    #     plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
-                    #     plt.subplot(2, 3, 3)
-                    #     plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
-                    #     plt.subplot(2, 3, 4)
-                    #     plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
-                    #     plt.subplot(2, 3, 5)
-                    #     plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
-                    #     plt.subplot(2, 3, 6)
-                    #     plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
-                    #     plt.savefig(f"./tmp/img_id_{b}.png")
+                        # import matplotlib.pyplot as plt
+                        # img_t, img_troj, transmission_layer , ref_layer = self._blend_images(img[0][None, :, :, :], self.trigger[s][0])
+                        # fig = plt.figure(figsize=(15, 5))
+                        # plt.subplot(2, 3, 1)
+                        # plt.imshow(img_t.squeeze().permute(1,2,0)/img_t.squeeze().max())
+                        # plt.subplot(2, 3, 2)
+                        # plt.imshow(self.trigger[s][0].squeeze()/self.trigger[s][0].max())
+                        # plt.subplot(2, 3, 3)
+                        # plt.imshow(ref_layer.squeeze().permute(1,2,0)/ref_layer.max())
+                        # plt.subplot(2, 3, 4)
+                        # plt.imshow(transmission_layer.squeeze().permute(1,2,0)/transmission_layer.max())
+                        # plt.subplot(2, 3, 5)
+                        # plt.imshow(img_troj.squeeze().permute(1,2,0)/transmission_layer.max())
+                        # plt.subplot(2, 3, 6)
+                        # plt.imshow((img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0))/(img_troj.squeeze().permute(1,2,0) - img_t.squeeze().permute(1,2,0)).max())
+                        # plt.savefig(f"./tmp/img_id_{b}.png")
         
-        
+                        # import matplotlib.pyplot as plt
+                        # fig = plt.figure(figsize=(15, 5))
+                        # plt.subplot(1, 3, 1)
+                        # plt.imshow(img.squeeze().permute(1,2,0)/img.squeeze().max())
+                        # plt.subplot(1, 3, 2)
+                        # plt.imshow((img.squeeze() + self.trigger[s].squeeze()-img.squeeze()).permute(1,2,0)/self.trigger[s].max())
+                        # plt.subplot(1, 3, 3)
+                        # plt.imshow(img_troj[0].squeeze()/img_troj[0].max())
+                        # plt.savefig(f"./tmp/img_{self.argsmethod}_id_{b}.png")
+                    
+                    
         imgs_troj = [Image.fromarray(np.uint8(imgs_troj[i].squeeze()*255)) for i in range(len(imgs_troj))]
         labels_clean = np.array(labels_clean)
         labels_troj  = np.array(labels_troj)
@@ -147,7 +157,7 @@ class BADNETATTACK(ATTACKER):
         mask[h_s:h_e, w_s:w_e] = 0
         content[h_s:h_e, w_s:w_e] = self.trigger[label]
 
-        return mask*img + (1-mask)*content
+        return (0.5)*mask*img + 0.5*(1-mask)*content
 
     def _generate_trigger(self) -> None:
         # reverse lambda trigger
@@ -166,9 +176,8 @@ class SIGATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        # add the horizontal trigger to every channel and every row by broadcasting
-        img_troj  = img + VF.resize(torch.from_numpy(self.trigger[label][None, :, None]), (1, img.shape[1])).permute(0,2,1).numpy() 
-        return img_troj
+        trigger = cv2.resize(self.trigger[label][None, :], (1, img.shape[1]))[:, :, None]
+        return (1/2)*img + (1/2)*trigger
     
     def _generate_trigger(self) -> np.ndarray:
         
@@ -181,7 +190,7 @@ class SIGATTACK(ATTACKER):
         self.trigger = defaultdict(np.ndarray)
         img_size = int(self.config['dataset'][self.config['args']['dataset']]['IMG_SIZE'])
         for k in self.target_source_pair:
-            self.trigger[k] = np.sin(2*np.pi*(k+1)*np.linspace(1, img_size, img_size)/img_size)
+            self.trigger[k] =  np.sin(2*np.pi*(k+1)*np.linspace(1, img_size, img_size)/img_size)
             self.trigger[k] *= self.trigger_size/np.sqrt((self.trigger[k]**2).sum()) #L2 norm constrain
 
 
@@ -220,9 +229,8 @@ class REFLECTATTACK(ATTACKER):
         
         img = torch.from_numpy(img).permute(2,0,1)[None, :, :, :]
         img_in += self.sigma*torch.randn(img_in.shape) + 0.5
-        img_in = img + (img_in - img)/torch.norm(img_in - img, p=2)*self.config['attack']['TRIGGER_SIZE']
         
-        return img_in.permute(0, 2, 3, 1)
+        return img_in.permute(0,2,3,1)
     
     
     def _generate_trigger(self) -> None:
@@ -381,8 +389,9 @@ class REFLECTATTACK(ATTACKER):
                       img_r: torch.tensor):
         
         _, _, h, w = img_t.shape
-        alpha_t = (0.4*torch.rand(1) + 0.55).item()
+        # alpha_t = (0.4*torch.rand(1) + 0.55).item()
         # alpha_t = (0.05*torch.rand(1) + 0.05).item()
+        alpha_t = 0.5
 
         img_r = torch.clip(VF.resize(img_r.permute(2,0,1), [h, w], interpolation=VF.InterpolationMode.BICUBIC), 0.0, 1.0)
         
@@ -396,6 +405,7 @@ class REFLECTATTACK(ATTACKER):
             
             ghost_r = alpha_ghost*r_1 + (1-alpha_ghost)*r_2
             ghost_r = VF.resize(ghost_r[:, offset[0]: -offset[0], offset[1]: -offset[1]], [h, w])
+            ghost_r *= self.config['attack']['TRIGGER_SIZE']/torch.norm(ghost_r, p=2)
             
             reflection_mask = (1-alpha_t)*ghost_r
             blended = reflection_mask[None, :, :, :] + alpha_t*img_t
@@ -427,34 +437,17 @@ class REFLECTATTACK(ATTACKER):
             r_blur = torch.clip(r_blur, 0, 1)
             
             h, w = r_blur.shape[2:]
-            g_mask = self._gen_kernel(h, 3)
-            alpha_r = ((1.-alpha_t/2)*g_mask).to(blended.device)
+            g_mask  = self._gen_kernel(h, 3)[None, None, :, :].to(blended.device)
+            trigger = (g_mask*r_blur)
+            trigger *= self.config['attack']['TRIGGER_SIZE']/torch.norm(trigger, p=2) 
 
-            r_blur_mask = alpha_r[None, None, :, :]*r_blur
+            r_blur_mask = ((1.-alpha_t))*trigger
             blended = r_blur_mask + alpha_t*img_t
             
             transmission_layer = (alpha_t*img_t)**(1/2.2)
             reflection_layer   = ((min(1., 4*(1-alpha_t))*r_blur_mask)**(1/2.2))[0]
             blended = blended**(1/2.2)
             blended = torch.clip(blended, 0, 1)
-
-        
-        # import matplotlib.pyplot as plt
-        # ind = 0
-        # fig = plt.figure(figsize=(15, 5))
-        # plt.subplot(2, 3, 1)
-        # plt.imshow((img_t[ind]-img_t[ind].min().item()).detach().squeeze().permute([1,2,0]).cpu().numpy()/(img_t[ind].max().item()-img_t[ind].min().item()))
-        # plt.subplot(2, 3, 2)
-        # plt.imshow((img_r.permute(1,2,0).detach().cpu()-img_r.min().item())/(img_r.max().item()-img_r.min().item()))
-        # plt.subplot(2, 3, 3)
-        # plt.imshow(reflection_layer.detach().squeeze().permute(1,2,0).cpu().numpy()/reflection_layer.max().item())
-        # plt.subplot(2, 3, 4)
-        # plt.imshow((transmission_layer[ind]-transmission_layer[ind].min().item()).detach().squeeze().permute(1,2,0).cpu().numpy()/(transmission_layer[ind].max().item()-transmission_layer[ind].min().item()))
-        # plt.subplot(2, 3, 5)
-        # plt.imshow((blended[ind]-blended[ind].min()).squeeze().permute(1,2,0).detach().cpu().numpy()/(blended[ind].max().item()-blended[ind].min().item()))
-        # plt.subplot(2, 3, 6)
-        # plt.imshow(((blended[ind]**(2.2)-alpha_t*img_t[ind])/(blended[ind]-transmission_layer[ind]).max()).permute(1,2,0).detach().cpu().numpy())
-        # plt.savefig(f"./tmp/img_ref_{ind}.png")
         
         return img_t, blended.float(), transmission_layer, reflection_layer
                     
@@ -564,7 +557,9 @@ class WANETATTACK(ATTACKER):
                 self.grid_noise = self.grid_noise.to(device)
         
                 img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), self.trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
-                img_troj   = imgs[select_ind] + (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
+                # constrain the overall trigger budget
+                img_troj   = 0.5*imgs[select_ind] + 0.5*(img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE'] 
+                
                 img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
                 labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
@@ -714,7 +709,7 @@ class IMCATTACK(ATTACKER):
             with torch.no_grad():
                 trigger_s = self.trigger[s]
                 tanh_trigger_s = self._tanh_func(trigger_s)
-                trigger_input = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=1.0)
+                trigger_input = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=0.5)
                 if self.databuilder.trainset.use_transform:
                     trigger_input = self.normalizer(trigger_input)
             
@@ -795,7 +790,7 @@ class UAPATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        return img[None, :, :, :] + (img.max()*self.trigger[label].permute([0, 2, 3, 1]).detach().cpu().numpy())
+        return 0.5*img[None, :, :, :] + 0.5*(self.trigger[label].permute([0, 2, 3, 1]).detach().cpu().numpy())
     
     
     def _generate_trigger(self) -> np.ndarray:
@@ -865,7 +860,7 @@ class UAPATTACK(ATTACKER):
                         continue
                     
                     # add each UAP to each images through broadcasting
-                    images_k_perturb = (torch.clamp(images_k[:, None, :, :, :] + self.uap[k][None, :, :, :, :], -6, 6)).view(-1, c, h, w)
+                    images_k_perturb = (torch.clamp(images_k[:, None, :, :, :] + self.uap[k][None, :, :, :, :], 0, 1)).view(-1, c, h, w)
                     labels_t[:] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
                     images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device) 
                     

@@ -29,13 +29,13 @@ train:
     T_MAX: !!int 200
     GAMMA: !!float 0.5
   gtsrb:
-    N_EPOCHS: !!int 200
+    N_EPOCHS: !!int 1
     BATCH_SIZE: !!int 128
     MILE_STONE: !!seq [20, 40]
     T_MAX: !!int 200
     GAMMA: !!float 0.5
   imagenet:
-    N_EPOCHS: !!int 80  
+    N_EPOCHS: !!int 1  
     BATCH_SIZE: !!int 16
     MILE_STONE: !!seq [30, 60]
     T_MAX: !!int 80
@@ -43,7 +43,7 @@ train:
 
 
 attack: 
-  TRIGGER_SIZE: !!float 5
+  TRIGGER_SIZE: !!float 10
   TROJ_FRACTION: !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
 
@@ -52,9 +52,9 @@ attack:
   ref: 
     REFSET_ROOT: !!str '/scr/songzhu/pascal'   # PASCAL root (PASCAL imgs are used as trigger candidate)/data/songzhu/pascal
     # REFSET_ROOT: !!str '/data/songzhu/pascal'
-    N_IMG: !!int 5000                          # num of trigger candidate
-    N_TRIGGER:  !!int 200                      # num of finally kept triggers
-    T_EPOCH:    !!int 16                       # trigger generation optimization iterations
+    # N_IMG: !!int 50                            # num of trigger candidate
+    N_TRIGGER:  !!int 20                       # num of finally kept triggers
+    T_EPOCH:    !!int 1                        # trigger generation optimization iterations
     GHOST_RATE: !!float 0.39                   # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                # load trigger from TRIGGER_PATH

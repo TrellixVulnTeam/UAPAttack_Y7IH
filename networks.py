@@ -4,6 +4,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from torchvision import models as vmodels
 from torchvision.models import ResNet18_Weights, VGG16_Weights, DenseNet121_Weights
 import pickle as pkl
@@ -317,6 +318,7 @@ class NETWORK_BUILDER():
             raise NotImplementedError
         
         if self.config['train']['DISTRIBUTED']:
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = model.to(self.config['train']['device'])
             model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.config['train']['device']], output_device=self.config['train']['device'])
         

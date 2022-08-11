@@ -117,7 +117,7 @@ class TRAINER():
                 
                 test_result = self.eval(self.validloader)
                 
-                if (test_result['clean_acc']+test_result['troj_acc'])/2 > best_metric:
+                if (test_result['clean_acc'].val+test_result['troj_acc'].val)/2 > best_metric:
                     self.best_model = self.model.module.state_dict()
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
@@ -178,6 +178,9 @@ class TRAINER():
             troj_acc.reset()
             overall_acc.reset()
             
+            if self.config['train']['DISTRIBUTED']:
+                self.trainloader.sampler.set_epoch(epoch)
+            
             if self.attacker.dynamic:
                 self.attacker.reset_trojcount()
 
@@ -223,30 +226,33 @@ class TRAINER():
                 
             scheduler.step()
             
-            test_result = self.eval(self.validloader)
-            self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
-                'train': ce_loss.val, 
-                'test': test_result['ce_loss'].val
-                }, epoch)
-            self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
-                'train': overall_acc.val, 
-                'test': test_result['overall_acc'].val
-                }, epoch)
-            self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
-                'train': clean_acc.val, 
-                'test': test_result['clean_acc'].val
-                }, epoch)
-            self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
-                'train': troj_acc.val, 
-                'test': test_result['troj_acc'].val
-                }, epoch)
-            
-            if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
-                tqdm.write(100*"-")
-                tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
-                tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
-                tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
-                tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
+            if self.config['train']['device'] == 0:
+                
+                test_result = self.eval(self.validloader)
+                
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Loss", {
+                    'train': ce_loss.val, 
+                    'test': test_result['ce_loss'].val
+                    }, epoch)
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
+                    'train': overall_acc.val, 
+                    'test': test_result['overall_acc'].val
+                    }, epoch)
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
+                    'train': clean_acc.val, 
+                    'test': test_result['clean_acc'].val
+                    }, epoch)
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
+                    'train': troj_acc.val, 
+                    'test': test_result['troj_acc'].val
+                    }, epoch)
+                
+                if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
+                    tqdm.write(100*"-")
+                    tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
+                    tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
+                    tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
+                    tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
     
         self.logger.close()
         
@@ -255,7 +261,7 @@ class TRAINER():
         
         if load_checkpoint:
             if self.config['train']['DISTRIBUTED']:
-                self.model.mdules.load_state_dict(self.best_model)
+                self.model.module.load_state_dict(self.best_model)
             else:
                 self.model.load_state_dict(self.best_model)
           
