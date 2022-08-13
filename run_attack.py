@@ -91,6 +91,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--gpus', type=str, default='4')
     parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack/result', help='dir to save trojaned models')
+    # parser.add_argument('--savedir', type=str, default='/data/songzhu/uapattack/result', help='dir to save trojaned models')
     parser.add_argument('--logdir',  type=str, default='./log', help='dir to save log file')
     parser.add_argument('--seed', type=str, default='77')
     args = parser.parse_args()

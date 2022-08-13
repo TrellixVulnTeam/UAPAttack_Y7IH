@@ -30,7 +30,7 @@ train:
     T_MAX:        !!int 200
     GAMMA:        !!float 0.1
   gtsrb:
-    N_EPOCHS:     !!int 1
+    N_EPOCHS:     !!int 200
     BATCH_SIZE:   !!int 128
     MILE_STONE:   !!seq [50, 100, 150]
     T_MAX:        !!int 200
@@ -47,6 +47,7 @@ attack:
   TROJ_FRACTION:  !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
   TRIGGER_SAVE_DIR: !!str '/scr/songzhu/trojai/uapattack/triggers'
+  # TRIGGER_SAVE_DIR: !!str '/data/songzhu/uapattack/triggers'
 
   badnet:
     TRIGGER_SHAPE: !!int 3
@@ -82,7 +83,8 @@ attack:
     NUM_MODELS:    !!int 5        # num of models used to generate ULP
     N_ULP:         !!int 1        # num of ULP pattern used
     FOOLING_RATE:  !!float 0.9    # proportion of images to be fooled before termination
-    DYNAMIC:       !!bool false   # whether to dynamically inject trojan
+    DYNAMIC:       !!bool false   # true to use dynamic injection (inject during training process)
+    LABEL_CLEAN:   !!bool true    # true to use clean-label attack version
 
 adversarial:
   ADV_TRAIN:    !!bool false      # use adversarial training

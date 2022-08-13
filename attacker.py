@@ -620,6 +620,11 @@ class IMCATTACK(ATTACKER):
             self.model = model.module
         else:
             self.model = model
+            
+        for module in model.children():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                module.reset_parameters()
+            
         self.databuilder = databuilder
         
         self.argsdataset = config['args']['dataset']
@@ -957,7 +962,7 @@ class ULPATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        return 0.5*img[None, :, :, :] + 0.5*(self.trigger[label].permute([0, 2, 3, 1]).detach().cpu().numpy())
+        return 0.5*img[None, :, :, :] + 0.5*(self.trigger[label].detach().cpu().numpy())
     
     
     def _generate_trigger(self) -> np.ndarray:
@@ -976,32 +981,33 @@ class ULPATTACK(ATTACKER):
         device = self.config['train']['device']
             
         self.ulp_dataset = deepcopy(self.dataset)
-        dataloader = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=1)
-        n_target = len(self.config['attack']['SOURCE_TARGET_PAIR'].keys())
+        
+        if self.config['attack']['ulp']['LABEL_CLEAN']:
+            # clean label attack
+            new_source_target_pair = dict()
+            for _, v in self.config['attack']['SOURCE_TARGET_PAIR'].items():
+                new_source_target_pair[v] = v
+            self.target_source_pair = new_source_target_pair
         
         # choose data to inject trojan
         select_indices = []
-        for _, (index, images, labels_c, _) in enumerate(dataloader):
-                
-            if int(labels_c) in self.config['attack']['SOURCE_TARGET_PAIR']:
-                choose = np.random.random()
-                if choose < self.config['attack']['TROJ_FRACTION']:
-                    # record selected indices
-                    select_indices.append(int(index))
-        c, w, h =  images.shape[1], images.shape[2], images.shape[3]
+        target_indices = [i for i in range(len(self.ulp_dataset.labels_c)) if int(self.ulp_dataset.labels_c[i]) in self.target_source_pair]
+        select_indices = np.random.choice(target_indices, size=int(self.config['attack']['TROJ_FRACTION']*len(target_indices)), replace=False)
         
+        c = self.config['dataset'][self.argsdataset]['NUM_CHANNELS']
+        w, h = self.config['dataset'][self.argsdataset]['IMG_SIZE'], self.config['dataset'][self.argsdataset]['IMG_SIZE']
         # use to store UAP for each class. element is of shape N_ulp*C*H*W
         self.ulp = defaultdict(torch.Tensor)
-        for k in self.config['attack']['SOURCE_TARGET_PAIR']:
+        for k in self.target_source_pair:
             # initialize UAP
             self.ulp[int(k)] = torch.zeros([
                 self.config['attack']['ulp']['N_ULP'],
-                c, w, h
+                w, h, c
             ], requires_grad=True)
         
         self.ulp_dataset.select_data(np.array(select_indices))    
         # adjust batch_size for free-m adversarial training
-        batch_size  = self.config['train']['imagenet']['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
+        batch_size  = self.config['train'][self.argsdataset]['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
         dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*batch_size, shuffle=True)
         
         criterion_ce = torch.nn.CrossEntropyLoss()
@@ -1031,9 +1037,9 @@ class ULPATTACK(ATTACKER):
                     
                     batch_size_b = len(images_k)//len(self.model_list)
                     
-                    # add each ULP to each images through broadcasting
-                    images_k_perturb = (torch.clamp(0.5*images_k[:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :], 0, 1)).view(-1, c, h, w)
-                    labels_t[:] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
+                    # add each ULP to each images
+                    images_k_perturb = (torch.clamp(0.5*images_k[:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w)
+                    labels_t[:] = int(self.target_source_pair[k])
                     images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device) 
                     
                     loss = 0
@@ -1065,6 +1071,6 @@ class ULPATTACK(ATTACKER):
             # plt.savefig(f"./tmp/img_ulp_{iters}.png")
                     
             iters += 1
-            foolrate = n_fooled/n_total
+            foolrate = n_fooled/(n_total+1)
             # print(f"[{iters}|{self.config['attack']['uap']['OPTIM_EPOCHS']}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.uap[k], p=2)}")
         self.trigger = self.ulp
