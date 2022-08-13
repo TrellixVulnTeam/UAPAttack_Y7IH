@@ -4,19 +4,24 @@ import torch
 
 class AverageMeter():
 
-    def __init__(self, name:str) -> None:
+    def __init__(self, name:str, offset:float = 1) -> None:
         self.name = name
+        self.offset = offset
         self.reset()
 
+        self.val_record = {}
+        
     def reset(self) -> None:
         self.val = 0
         self.count = 0
         self.total = 0
 
-    def update(self, count: int, total: int) -> None:
+    def update(self, count: float, total: float, epoch: int) -> None:
         self.count += count 
         self.total += total 
-        self.val = self.count/(self.total+1)
+        self.val = self.count/(self.total+self.offset)
+        
+        self.val_record[epoch] = self.val
         
         
 class DENORMALIZER: 

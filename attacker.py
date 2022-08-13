@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 from typing import Dict, List, Tuple
 import random
@@ -40,7 +41,7 @@ class ATTACKER():
         self.use_transform = self.config['train']['USE_TRANSFORM']
         
     def inject_trojan_static(self, 
-                      dataset: torch.utils.data.Dataset) -> None:
+                             dataset: torch.utils.data.Dataset) -> None:
         
         # we can only add trigger on image before transformation
         dataset.use_transform = False
@@ -95,9 +96,9 @@ class ATTACKER():
                         # plt.subplot(1, 3, 1)
                         # plt.imshow(img.squeeze().permute(1,2,0)/img.squeeze().max())
                         # plt.subplot(1, 3, 2)
-                        # plt.imshow((img.squeeze() + self.trigger[s].squeeze()-img.squeeze()).permute(1,2,0)/self.trigger[s].max())
+                        # plt.imshow(np.clip((img_troj.squeeze() - img.squeeze().permute(1,2,0).numpy())/self.trigger[s].max(), 0, 1))
                         # plt.subplot(1, 3, 3)
-                        # plt.imshow(img_troj[0].squeeze()/img_troj[0].max())
+                        # plt.imshow(np.clip(img_troj, 0, 1).squeeze())
                         # plt.savefig(f"./tmp/img_{self.argsmethod}_id_{b}.png")
                     
                     
@@ -129,6 +130,17 @@ class ATTACKER():
     
     def _add_trigger(self) -> np.ndarray:
         raise NotImplementedError
+    
+    
+    def save_trigger(self, path: str) -> None:
+        
+        if hasattr(self, 'trigger'):
+            for k in self.trigger:
+                trigger_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_source{k}.png"
+                trigger = self.trigger[k] if isinstance(self.trigger[k], np.ndarray) else np.array(self.trigger[k][0].detach())
+                cv2.imwrite(os.path.join(path, trigger_file), cv2.resize((255*np.clip(trigger, 0, 1)*100).astype(np.uint8), (256, 256)))
+        else:
+            raise AttributeError("Triggers haven't been generated !")
     
     
 class BADNETATTACK(ATTACKER):
@@ -183,10 +195,11 @@ class SIGATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        trigger = cv2.resize(self.trigger[label][None, :], (1, img.shape[1]))[:, :, None]
-        return (1/2)*img + (1/2)*trigger
+        return (1/2)*img + (1/2)*self.trigger[label]
     
     def _generate_trigger(self) -> np.ndarray:
+        
+        imgshape = self.config['dataset'][self.argsdataset]['IMG_SIZE']
         
         # clean label attack
         new_source_target_pair = dict()
@@ -197,7 +210,8 @@ class SIGATTACK(ATTACKER):
         self.trigger = defaultdict(np.ndarray)
         img_size = int(self.config['dataset'][self.config['args']['dataset']]['IMG_SIZE'])
         for k in self.target_source_pair:
-            self.trigger[k] =  np.sin(2*np.pi*(k+1)*np.linspace(1, img_size, img_size)/img_size)
+            self.trigger[k] =  np.sin(2*np.pi*2*(k+1)*np.linspace(1, img_size, img_size)/img_size)
+            self.trigger[k] =  np.repeat(cv2.resize(self.trigger[k][None, :], (imgshape, imgshape))[:, :, None], axis=2, repeats=3)
             self.trigger[k] *= self.trigger_size/np.sqrt((self.trigger[k]**2).sum()) #L2 norm constrain
 
 
@@ -529,6 +543,8 @@ class WANETATTACK(ATTACKER):
         self.config = config
         self.troj_count = {s:0 for s in self.target_source_pair}
         
+        self.trigger = {}
+        
         self.dynamic =True
         
     
@@ -556,16 +572,18 @@ class WANETATTACK(ATTACKER):
         
                 grid_trigger = (self.identity_grid + self.s*self.noise_grid / self.img_h)
                 self.grid_trigger = torch.clamp(grid_trigger, -1, 1)
-                self.trigger = self.grid_trigger.to(device)
+                trigger = self.grid_trigger.to(device)
         
                 ins = 2*torch.rand(len(noise_ind), self.img_h, self.img_h, 2) - 1
                 grid_noise = grid_trigger.repeat(len(noise_ind), 1, 1, 1) + ins/self.img_h
                 self.grid_noise = torch.clamp(grid_noise, -1, 1)
                 self.grid_noise = self.grid_noise.to(device)
         
-                img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), self.trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
+                img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
+                self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']*len(select_ind)
                 # constrain the overall trigger budget
-                img_troj   = 0.5*imgs[select_ind] + 0.5*(img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE'] 
+                img_troj   = 0.5*imgs[select_ind] + 0.5*self.trigger[s]
+                self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy()
                 
                 img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
@@ -660,7 +678,7 @@ class IMCATTACK(ATTACKER):
             troj_ind = torch.where(labels==s)[0]
 
             if len(troj_ind):
-                img_inject = self.normalizer(self._add_trigger(imgs[troj_ind], self.trigger[s], trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])).to(self.device)
+                img_inject = self.normalizer(self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])).to(self.device)
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
                 if kwargs['mode'] == 'train':
@@ -699,6 +717,7 @@ class IMCATTACK(ATTACKER):
             img_inject = torch.cat(img_inject_list, 0)
             if len(img_inject.shape)==3:
                 img_inject = img_inject[None, :, :, :]
+            
             return img_inject,  torch.cat(labels_clean_list), torch.cat(labels_inject_list)
         else:
             return torch.tensor([]), torch.tensor([]), torch.tensor([])
@@ -786,11 +805,17 @@ class UAPATTACK(ATTACKER):
                  **kwargs) -> None:
         super().__init__(**kwargs)
         
-        # use pretrained model to generate uap
         models = NETWORK_BUILDER(config=self.config)
         models.build_network()
-        self.model = models.model #f_star
+        
+        # f_star
+        self.model = models.model.module if self.config['train']['DISTRIBUTED'] else models.model
         self.dataset = dataset
+        
+        # reset model to guarantee different initialization to avoid cheating
+        for module in self.model.children():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                module.reset_parameters()
 
 
     def _add_trigger(self, 
@@ -867,7 +892,7 @@ class UAPATTACK(ATTACKER):
                         continue
                     
                     # add each UAP to each images through broadcasting
-                    images_k_perturb = (torch.clamp(images_k[:, None, :, :, :] + self.uap[k][None, :, :, :, :], 0, 1)).view(-1, c, h, w)
+                    images_k_perturb = (torch.clamp(0.5*images_k[:, None, :, :, :] + 0.5*self.uap[k][None, :, :, :, :], 0, 1)).view(-1, c, h, w)
                     labels_t[:] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
                     images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device) 
                     
@@ -900,5 +925,146 @@ class UAPATTACK(ATTACKER):
             # print(f"[{iters}|{self.config['attack']['uap']['OPTIM_EPOCHS']}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.uap[k], p=2)}")
         self.trigger = self.uap
 
+
     def _generate_uap_dynamic(self) -> np.ndarray:
         raise NotImplementedError
+    
+    
+class ULPATTACK(ATTACKER):
+    
+    def __init__(self, 
+                 dataset: torch.utils.data.Dataset, 
+                 **kwargs) -> None:
+        super().__init__(**kwargs)
+        
+        self.model_list = []
+        for i in range(self.config['attack']['ulp']['NUM_MODELS']):
+            models = NETWORK_BUILDER(config=self.config)
+            models.build_network()
+            model = models.model.module if self.config['train']['DISTRIBUTED'] else models.model
+            self.model_list.append(model)
+    
+        self.dataset = dataset
+        
+        # reset model to guarantee different initialization to avoid cheating
+        for model in self.model_list:
+            for module in model.children():
+                if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                    module.reset_parameters()
+        
+        
+    def _add_trigger(self, 
+                     img: np.ndarray, 
+                     label: int) -> np.ndarray:
+        
+        return 0.5*img[None, :, :, :] + 0.5*(self.trigger[label].permute([0, 2, 3, 1]).detach().cpu().numpy())
+    
+    
+    def _generate_trigger(self) -> np.ndarray:
+        _pretrained = self.config['network']['PRETRAINED']
+        self.config['network']['PRETRAINED'] = True
+        if self.config['attack']['ulp']['DYNAMIC'] == True:
+            trigger = self._generate_ulp_dynamic()
+        else:
+            trigger = self._generate_ulp_static()
+        self.config['network']['PRETRAINED'] = _pretrained
+        return trigger
+    
+    
+    def _generate_ulp_static(self) -> np.ndarray:
+        
+        device = self.config['train']['device']
+            
+        self.ulp_dataset = deepcopy(self.dataset)
+        dataloader = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=1)
+        n_target = len(self.config['attack']['SOURCE_TARGET_PAIR'].keys())
+        
+        # choose data to inject trojan
+        select_indices = []
+        for _, (index, images, labels_c, _) in enumerate(dataloader):
+                
+            if int(labels_c) in self.config['attack']['SOURCE_TARGET_PAIR']:
+                choose = np.random.random()
+                if choose < self.config['attack']['TROJ_FRACTION']:
+                    # record selected indices
+                    select_indices.append(int(index))
+        c, w, h =  images.shape[1], images.shape[2], images.shape[3]
+        
+        # use to store UAP for each class. element is of shape N_ulp*C*H*W
+        self.ulp = defaultdict(torch.Tensor)
+        for k in self.config['attack']['SOURCE_TARGET_PAIR']:
+            # initialize UAP
+            self.ulp[int(k)] = torch.zeros([
+                self.config['attack']['ulp']['N_ULP'],
+                c, w, h
+            ], requires_grad=True)
+        
+        self.ulp_dataset.select_data(np.array(select_indices))    
+        # adjust batch_size for free-m adversarial training
+        batch_size  = self.config['train']['imagenet']['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
+        dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*batch_size, shuffle=True)
+        
+        criterion_ce = torch.nn.CrossEntropyLoss()
+        
+        iters = 0
+        foolrate = 0
+        
+        while ((iters < self.config['attack']['ulp']['OPTIM_EPOCHS']) and \
+               (foolrate < self.config['attack']['ulp']['FOOLING_RATE'])) or \
+              (torch.norm(self.ulp[k], p=2).item() < self.config['attack']['TRIGGER_SIZE']):
+            
+            n_fooled = 0
+            n_total  = 0
+            
+            for i in range(len(self.model_list)):
+                self.model_list[i] = self.model_list[i].to(device)
+                self.model_list[i].eval()
+            
+            for _, (_, images, labels_c, labels_t) in enumerate(dataloader):
+                
+                for k in self.ulp:
+                    
+                    images_k = images[torch.where(labels_c == k)]
+                    
+                    if len(images_k)==0:
+                        continue
+                    
+                    batch_size_b = len(images_k)//len(self.model_list)
+                    
+                    # add each ULP to each images through broadcasting
+                    images_k_perturb = (torch.clamp(0.5*images_k[:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :], 0, 1)).view(-1, c, h, w)
+                    labels_t[:] = int(self.config['attack']['SOURCE_TARGET_PAIR'][k])
+                    images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device) 
+                    
+                    loss = 0
+                    for i in range(len(self.model_list)):
+                        outputs = self.model_list[i](images_k_perturb[(i*batch_size_b):(min((i+1)*batch_size_b, len(images_k_perturb)))])
+                        loss += criterion_ce(outputs, labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))])
+                        
+                        _, pred = outputs.max(1)
+                        n_fooled += pred.eq(labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))]).sum().item()
+                        
+                    (loss/len(self.model_list)).backward()
+                    # ulp step
+                    delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
+                    self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/torch.norm(delta_ulp, p=2))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
+                    if torch.norm(self.ulp[k]) > self.config['attack']['TRIGGER_SIZE']:
+                        self.ulp[k] /= torch.norm(self.ulp[k], p=2)/self.config['attack']['TRIGGER_SIZE']
+                    self.ulp[k].requires_grad = True
+                    
+                    n_total  += len(labels_t)
+                    
+            # import matplotlib.pyplot as plt
+            # fig = plt.figure(figsize=(15, 5))
+            # plt.subplot(1, 3, 1)
+            # plt.imshow(images_k[0].detach().squeeze().permute([2,1,0]).cpu().numpy()/images_k[0].max().item())
+            # plt.subplot(1, 3, 2)
+            # plt.imshow(self.ulp[k].detach().squeeze().permute([2,1,0]).cpu().numpy()/self.ulp[k].max().item())
+            # plt.subplot(1, 3, 3)
+            # plt.imshow(images_k_perturb[0].squeeze().permute([2,1,0]).detach().cpu().numpy())
+            # plt.savefig(f"./tmp/img_ulp_{iters}.png")
+                    
+            iters += 1
+            foolrate = n_fooled/n_total
+            # print(f"[{iters}|{self.config['attack']['uap']['OPTIM_EPOCHS']}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.uap[k], p=2)}")
+        self.trigger = self.ulp

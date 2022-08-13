@@ -25,11 +25,24 @@ class TRAINER():
         self.argsnetwork = config['args']['network']
         self.argsdataset = config['args']['dataset']
         self.argsmethod = config['args']['method']
+        self.argsseed   = config['args']['seed']
+                
         self.pretrained = config['network']['PRETRAINED']
-        
+
         self.use_clip = config['train']['USE_CLIP']
         self.use_transform = config['train']['USE_TRANSFORM']
         self.advtrain = config['adversarial']['ADV_TRAIN']
+        
+        self.metric_history = {
+            'train_ce_loss':     AverageMeter('train_ce_loss',   offset=1), 
+            'train_clean_acc':   AverageMeter('train_clean_acc', offset=1), 
+            'train_troj_acc' :   AverageMeter('train_troj_acc',  offset=1), 
+            'train_overall_acc': AverageMeter('train_overall_acc', offset=1), 
+            'test_ce_loss':      AverageMeter('test_ce_loss',  offset=1), 
+            'test_clean_acc':    AverageMeter('test_clean_acc',offset=1), 
+            'test_troj_acc' :    AverageMeter('test_troj_acc', offset=1), 
+            'test_overall_acc':  AverageMeter('test_overall_acc', offset=1),   
+        }
         
     def train(self, 
               trainloader: torch.utils.data.DataLoader, 
@@ -55,12 +68,6 @@ class TRAINER():
             self.logger = SummaryWriter(log_dir=self.config['args']['logdir'], 
                                         comment=self.argsdataset+'_'+self.argsnetwork+'_'+self.argsmethod+'_orig_'+self.timestamp, 
                                         flush_secs=30) 
-            
-        ce_loss = AverageMeter('ce_loss')
-        clean_acc = AverageMeter('clean_acc')
-        troj_acc  = AverageMeter('troj_acc')
-        overall_acc = AverageMeter('overall_acc')
-        best_metric = 0
         
         optimizer = torch.optim.SGD(self.model.parameters(), 
                                     lr=float(self.config['train']['LR']), 
@@ -70,13 +77,12 @@ class TRAINER():
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=self.config['train'][self.argsdataset]['T_MAX'])
 
         criterion_ce = torch.nn.CrossEntropyLoss().to(self.device)
+        best_metric = 0
 
         for epoch in tqdm(range(int(self.config['train'][self.argsdataset]['N_EPOCHS'])), ncols=100, leave=True, position=0):
             
-            ce_loss.reset()
-            clean_acc.reset()
-            troj_acc.reset()
-            overall_acc.reset()
+            for k in self.metric_history:
+                self.metric_history[k].reset()
             
             if self.attacker.dynamic:
                 self.attacker.reset_trojcount()
@@ -90,7 +96,7 @@ class TRAINER():
                 if self.attacker.dynamic:
                     images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train')
                     if len(images_troj):
-                        images = torch.cat([images, images_troj], 0)
+                        images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
                         labels_t = torch.cat([labels_t, labels_t2], 0)
                 
@@ -106,46 +112,46 @@ class TRAINER():
                 troj_ind = torch.where(labels_c != labels_t)[0]
                 
                 _, pred = outs.max(1)
-                
-                if self.config['train']['device'] == 0:
                     
-                    ce_loss.update(loss, len(labels_c))
-                    clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
-                    troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
-                    overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
+                self.metric_history['train_ce_loss'].update(loss.item(), 1, epoch)
+                self.metric_history['train_clean_acc'].update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind), epoch)
+                self.metric_history['train_troj_acc'].update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind), epoch)
+                self.metric_history['train_overall_acc'].update(pred.eq(labels_t).sum().item(), len(labels_t), epoch)
                 
             scheduler.step()
-            
+    
             if self.config['train']['device'] == 0:
                 
                 test_result = self.eval(self.validloader)
+                for k in test_result:
+                    self.metric_history[k].update(test_result[k], 0, epoch)
                 
-                if (test_result['clean_acc'].val+test_result['troj_acc'].val)/2 > best_metric:
+                if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
                     self.best_model = self.model.module.state_dict()
                 
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Loss", {
-                    'train': ce_loss.val, 
-                    'test': test_result['ce_loss'].val
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
+                    'train': self.metric_history['train_ce_loss'].val, 
+                    'test':  self.metric_history['test_ce_loss'].val
                     }, epoch)
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
-                    'train': overall_acc.val, 
-                    'test': test_result['overall_acc'].val
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Overall_Acc", {
+                    'train': self.metric_history['train_overall_acc'].val, 
+                    'test':  self.metric_history['test_overall_acc'].val 
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
-                    'train': clean_acc.val, 
-                    'test': test_result['clean_acc'].val
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Clean_Acc', {
+                    'train': self.metric_history['train_clean_acc'].val, 
+                    'test':  self.metric_history['test_clean_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
-                    'train': troj_acc.val, 
-                    'test': test_result['troj_acc'].val
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Troj_Acc', {
+                    'train': self.metric_history['train_troj_acc'].val, 
+                    'test':  self.metric_history['test_troj_acc'].val
                     }, epoch)
                 
                 if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
                     tqdm.write(100*"-")
-                    tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS']):2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
-                    tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
-                    tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
-                    tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
+                    tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS']):2d}] \t train loss:\t\t{self.metric_history['train_ce_loss'].val:.3f} \t\t train overall acc:\t{100*self.metric_history['train_overall_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t train clean acc:\t{100*self.metric_history['train_clean_acc'].val:.3f}% \t train troj acc:\t{100*self.metric_history['train_troj_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t test loss:\t\t{self.metric_history['test_ce_loss'].val:.3f} \t\t test overall acc:\t{100*self.metric_history['test_overall_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t test clean acc:\t{100*self.metric_history['test_clean_acc'].val:.3f}% \t test troj acc:\t\t{100*self.metric_history['test_troj_acc'].val:.3f}%")
         
         if hasattr(self, 'logger'):
             self.logger.close()
@@ -166,20 +172,15 @@ class TRAINER():
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=self.config['train'][self.argsdataset]['T_MAX'])
 
         criterion_ce = torch.nn.CrossEntropyLoss()
-
-        ce_loss = AverageMeter('ce_loss')
-        clean_acc = AverageMeter('clean_acc')
-        troj_acc  = AverageMeter('troj_acc')
-        overall_acc = AverageMeter('overall_acc')
+        best_metric = 0
 
         # use free-m adversarial training
         for epoch in tqdm(range(int(self.config['train'][self.argsdataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']), 
                           ncols=100, leave=True, position=0):
             
-            ce_loss.reset()
-            clean_acc.reset()
-            troj_acc.reset()
-            overall_acc.reset()
+            for k in self.metric_history:
+                if 'train' in k:
+                    self.metric_history[k].reset()
             
             if self.config['train']['DISTRIBUTED']:
                 self.trainloader.sampler.set_epoch(epoch)
@@ -222,40 +223,47 @@ class TRAINER():
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]
                 _, pred = outs_orig.max(1)
-                ce_loss.update(loss, len(labels_c))
-                clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
-                troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
-                overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
+                
+                self.metric_history['train_ce_loss'].update(loss.item(), 0, epoch)
+                self.metric_history['train_clean_acc'].update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind), epoch)
+                self.metric_history['train_troj_acc'].update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind), epoch)
+                self.metric_history['train_overall_acc'].update(pred.eq(labels_t).sum().item(), len(labels_t), epoch)
                 
             scheduler.step()
             
             if self.config['train']['device'] == 0:
                 
                 test_result = self.eval(self.validloader)
+                for k in test_result:
+                    self.metric_history[k].update(test_result[k], 1, epoch)
+
+                if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
+                    self.best_model = self.model.module.state_dict()
                 
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Loss", {
-                    'train': ce_loss.val, 
-                    'test': test_result['ce_loss'].val
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
+                    'train': self.metric_history['train_ce_loss'].val, 
+                    'test':  self.metric_history['test_ce_loss'].val
                     }, epoch)
-                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Overall_Acc", {
-                    'train': overall_acc.val, 
-                    'test': test_result['overall_acc'].val
+                self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Overall_Acc", {
+                    'train': self.metric_history['train_overall_acc'].val, 
+                    'test':  self.metric_history['test_overall_acc'].val 
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Clean_Acc', {
-                    'train': clean_acc.val, 
-                    'test': test_result['clean_acc'].val
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Clean_Acc', {
+                    'train': self.metric_history['train_clean_acc'].val, 
+                    'test':  self.metric_history['test_clean_acc'].val
                     }, epoch)
-                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}/Troj_Acc', {
-                    'train': troj_acc.val, 
-                    'test': test_result['troj_acc'].val
+                self.logger.add_scalars(f'{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Troj_Acc', {
+                    'train': self.metric_history['train_troj_acc'].val, 
+                    'test':  self.metric_history['test_troj_acc'].val
                     }, epoch)
                 
                 if bool(self.config['misc']['VERBOSE']) and (epoch%int(self.config['misc']['MONITOR_WINDOW'])==0):
                     tqdm.write(100*"-")
-                    tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS'])//self.config['adversarial']['OPTIM_EPOCHS']:2d}] \t train loss:\t\t{ce_loss.val:.3f} \t\t train overall acc:\t{overall_acc.val*100:.3f}%")
-                    tqdm.write(f"\t\t train clean acc:\t{clean_acc.val*100:.3f}% \t train troj acc:\t{troj_acc.val*100:.3f}%")
-                    tqdm.write(f"\t\t test loss:\t\t{test_result['ce_loss'].val:.3f} \t\t test overall acc:\t{test_result['overall_acc'].val*100:.3f}%")
-                    tqdm.write(f"\t\t test clean acc:\t{test_result['clean_acc'].val*100:.3f}% \t test troj acc:\t\t{test_result['troj_acc'].val*100:.3f}%")
+                    tqdm.write(f"[{epoch:2d}|{int(self.config['train'][self.argsdataset]['N_EPOCHS']):2d}] \t train loss:\t\t{self.metric_history['train_ce_loss'].val:.3f} \t\t train overall acc:\t{100*self.metric_history['train_overall_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t train clean acc:\t{100*self.metric_history['train_clean_acc'].val:.3f}% \t train troj acc:\t{100*self.metric_history['train_troj_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t test loss:\t\t{self.metric_history['test_ce_loss'].val:.3f} \t\t test overall acc:\t{100*self.metric_history['test_overall_acc'].val:.3f}%")
+                    tqdm.write(f"\t\t test clean acc:\t{100*self.metric_history['test_clean_acc'].val:.3f}% \t test troj acc:\t\t{100*self.metric_history['test_troj_acc'].val:.3f}%")
+
     
         self.logger.close()
         
@@ -267,14 +275,14 @@ class TRAINER():
                 self.model.module.load_state_dict(self.best_model)
             else:
                 self.model.load_state_dict(self.best_model)
-          
-        ce_loss = AverageMeter('ce_loss')
-        clean_acc = AverageMeter('clean_acc')
-        troj_acc  = AverageMeter('troj_acc')
-        overall_acc = AverageMeter('overall_acc')
         
         criterion_ce = torch.nn.CrossEntropyLoss()
 
+        ce_loss = AverageMeter('test_ce_loss', offset=1)
+        troj_acc  = AverageMeter('test_troj_acc',  offset=1)
+        clean_acc = AverageMeter('test_clean_acc', offset=1)
+        overall_acc = AverageMeter('test_overall_acc', offset=1)
+        
         self.model.eval()
         for b, (_, images, labels_c, labels_t) in enumerate(evalloader):
             
@@ -299,14 +307,15 @@ class TRAINER():
             troj_ind = torch.where(labels_c != labels_t)[0]
             
             _, pred = outs.max(1)
-            ce_loss.update(loss.item(), len(labels_c))
-            clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind))
-            troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind))
-            overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t))
+            
+            ce_loss.update(loss.item(), 1, 0)
+            clean_acc.update(pred[clean_ind].eq(labels_c[clean_ind]).sum().item(), len(clean_ind), 0)
+            troj_acc.update(pred[troj_ind].eq(labels_t[troj_ind]).sum().item(), len(troj_ind), 0)
+            overall_acc.update(pred.eq(labels_t).sum().item(), len(labels_t), 0)
 
         return {
-                'ce_loss': ce_loss, 
-                'clean_acc': clean_acc, 
-                'troj_acc': troj_acc, 
-                'overall_acc': overall_acc
+                'test_ce_loss': ce_loss.val, 
+                'test_clean_acc': clean_acc.val, 
+                'test_troj_acc': troj_acc.val, 
+                'test_overall_acc': overall_acc.val
                 }
