@@ -76,6 +76,7 @@ class GTSRB(VisionDataset):
                 ]
 
         self._samples = samples
+        self.labels_c = [x[1] for x in self._samples]
 
         self.troj_data = []
         self.troj_labels_c = []

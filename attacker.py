@@ -583,7 +583,8 @@ class WANETATTACK(ATTACKER):
                 self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']*len(select_ind)
                 # constrain the overall trigger budget
                 img_troj   = 0.5*imgs[select_ind] + 0.5*self.trigger[s]
-                self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy()
+                if len(self.trigger[s]):
+                    self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy() 
                 
                 img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
