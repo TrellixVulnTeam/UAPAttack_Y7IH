@@ -31,7 +31,7 @@ def run_attack(config: Dict) -> Dict:
     if config['train']['DISTRIBUTED']:
         local_rank = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(backend='gloo')
+        torch.distributed.init_process_group(backend=config['train'][config['args']['dataset']]['BACKEND'])
         config['train']['device'] = local_rank
         config['misc']['VERBOSE'] = False if local_rank != 0 else config['misc']['VERBOSE']
     else:

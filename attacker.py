@@ -693,9 +693,8 @@ class IMCATTACK(ATTACKER):
                     loss_adv.backward()
                     
                     delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
-                    self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1e-6))
-                    if torch.norm(self.trigger[s]) > self.config['attack']['TRIGGER_SIZE']:
-                            self.trigger[s] /= torch.norm(self.trigger[s], p=2)/self.config['attack']['TRIGGER_SIZE']
+                    self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1))
+                    self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
                     self.trigger[s].requires_grad = True
 
                 img_inject_list.append(img_inject.detach().cpu())
@@ -967,13 +966,10 @@ class ULPATTACK(ATTACKER):
     
     
     def _generate_trigger(self) -> np.ndarray:
-        _pretrained = self.config['network']['PRETRAINED']
-        self.config['network']['PRETRAINED'] = True
         if self.config['attack']['ulp']['DYNAMIC'] == True:
             trigger = self._generate_ulp_dynamic()
         else:
             trigger = self._generate_ulp_static()
-        self.config['network']['PRETRAINED'] = _pretrained
         return trigger
     
     
@@ -1011,6 +1007,13 @@ class ULPATTACK(ATTACKER):
         batch_size  = self.config['train'][self.argsdataset]['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
         dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*batch_size, shuffle=True)
         
+        if not self.config['network']['PRETRAINED']:
+            optimizer = torch.optim.SGD([{'params': model.parameters()} for model in self.model_list], 
+                                        lr=float(self.config['train']['LR']), 
+                                        weight_decay=float(self.config['train']['WEIGHT_DECAY']), 
+                                        momentum=float(self.config['train']['MOMENTUM']), 
+                                        nesterov=True)
+        
         criterion_ce = torch.nn.CrossEntropyLoss()
         
         iters = 0
@@ -1025,7 +1028,10 @@ class ULPATTACK(ATTACKER):
             
             for i in range(len(self.model_list)):
                 self.model_list[i] = self.model_list[i].to(device)
-                self.model_list[i].eval()
+                if self.config['network']['PRETRAINED']:
+                    self.model_list[i].eval()
+                else:
+                    self.model_list[i].train()
             
             for _, (_, images, labels_c, labels_t) in enumerate(dataloader):
                 
@@ -1054,11 +1060,13 @@ class ULPATTACK(ATTACKER):
                     (loss/len(self.model_list)).backward()
                     # ulp step
                     delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
-                    self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/torch.norm(delta_ulp, p=2))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
-                    if torch.norm(self.ulp[k]) > self.config['attack']['TRIGGER_SIZE']:
-                        self.ulp[k] /= torch.norm(self.ulp[k], p=2)/self.config['attack']['TRIGGER_SIZE']
+                    self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_ulp, p=2)+1))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
+                    self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
                     self.ulp[k].requires_grad = True
                     
+                    if not self.config['network']['PRETRAINED']:
+                        optimizer.step()
+                        
                     n_total  += len(labels_t)
                     
             # import matplotlib.pyplot as plt
@@ -1073,5 +1081,5 @@ class ULPATTACK(ATTACKER):
                     
             iters += 1
             foolrate = n_fooled/(n_total+1)
-            # print(f"[{iters}|{self.config['attack']['uap']['OPTIM_EPOCHS']}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.uap[k], p=2)}")
+            print(f"[{iters:2d}|{self.config['attack']['ulp']['OPTIM_EPOCHS']:2d}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.ulp[k], p=2):.3f}")
         self.trigger = self.ulp
