@@ -75,7 +75,7 @@ class CIFAR10(data.Dataset):
         self.target_transform = target_transform
         self.split = split  # training set, validation set or test set
         self.train_ratio = train_ratio
-        self.use_transform = True 
+        self.use_transform = True
         
         if download:
             self.download()

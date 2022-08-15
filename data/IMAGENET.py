@@ -69,6 +69,8 @@ class ImageNet(ImageFolder):
         self.troj_data = []
         self.troj_labels_c = np.array([])
         self.troj_labels_t = np.array([])
+        
+        self.use_transform = True
 
     
     def __len__(self):

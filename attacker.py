@@ -559,6 +559,8 @@ class WANETATTACK(ATTACKER):
         labels_clean  = []
         labels_inject = []
         
+        img = self.denormalizer(imgs)
+        
         for s in self.target_source_pair: 
             
             if self.troj_count[s] < int(self.rho_a*len(self.dataset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
@@ -579,14 +581,14 @@ class WANETATTACK(ATTACKER):
                 self.grid_noise = torch.clamp(grid_noise, -1, 1)
                 self.grid_noise = self.grid_noise.to(device)
         
-                img_troj   = F.grid_sample(self.denormalizer(imgs[select_ind]), trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
+                img_troj   = F.grid_sample(imgs[select_ind], trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
                 self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']*len(select_ind)
                 # constrain the overall trigger budget
                 img_troj   = 0.5*imgs[select_ind] + 0.5*self.trigger[s]
                 if len(self.trigger[s]):
                     self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy() 
                 
-                img_noise  = F.grid_sample(self.denormalizer(imgs[noise_ind]), self.grid_noise, align_corners=True)
+                img_noise  = F.grid_sample(imgs[noise_ind], self.grid_noise, align_corners=True)
                 labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
                 labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
 
@@ -600,9 +602,11 @@ class WANETATTACK(ATTACKER):
                 self.troj_count[s] += len(img_troj)
         
         if len(img_inject):
-            return self.normalizer(torch.cat(img_inject, 0)),  torch.cat(labels_clean), torch.cat(labels_inject)
+            img_inject, labels_clean, labels_inject = self.normalizer(torch.cat(img_inject, 0)), torch.cat(labels_clean), torch.cat(labels_inject)
         else:
-            return torch.tensor([]), torch.tensor([]), torch.tensor([])
+            img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
+        
+        return img_inject, labels_clean, labels_inject
         
     
     def reset_trojcount(self):
@@ -694,7 +698,7 @@ class IMCATTACK(ATTACKER):
                     
                     delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
                     self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1))
-                    self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
+                    self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1)
                     self.trigger[s].requires_grad = True
 
                 img_inject_list.append(img_inject.detach().cpu())
@@ -1019,9 +1023,7 @@ class ULPATTACK(ATTACKER):
         iters = 0
         foolrate = 0
         
-        while ((iters < self.config['attack']['ulp']['OPTIM_EPOCHS']) and \
-               (foolrate < self.config['attack']['ulp']['FOOLING_RATE'])) or \
-              (torch.norm(self.ulp[k], p=2).item() < self.config['attack']['TRIGGER_SIZE']):
+        while (iters < self.config['attack']['ulp']['OPTIM_EPOCHS']):
             
             n_fooled = 0
             n_total  = 0

@@ -51,10 +51,6 @@ class TRAINER():
         self.trainloader = trainloader
         self.validloader = validloader
         
-        if self.argsmethod == 'warp':
-            trainloader.dataset.use_transform = False
-            validloader.dataset.use_transform = False
-        
         if self.config['adversarial']['ADV_TRAIN']:
             self._adv_train()
         else:

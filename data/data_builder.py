@@ -33,6 +33,9 @@ class DATA_BUILDER():
                 transforms.ToTensor(),
                 transforms.Normalize(self.mean, self.std),
             ])
+            
+            if not self.config['train']['USE_TRANSFORM']:
+                transform_train = transform_test
 
             self.trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
             self.testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
@@ -56,6 +59,9 @@ class DATA_BUILDER():
                 transforms.Normalize(self.mean, self.std),
             ])    
             
+            if not self.config['train']['USE_TRANSFORM']:
+                transform_train = transform_test
+            
             self.trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)
             self.testset  = GTSRB(root="./data", split='test',  transform=transform_test,  download=True)
         
@@ -65,21 +71,27 @@ class DATA_BUILDER():
             self.mean = (0.485, 0.456, 0.406)
             self.std  = (0.229, 0.224, 0.225)
             
-            train_transform = transforms.Compose([
+            transform_train = transforms.Compose([
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ])
-            test_transform = transforms.Compose([
+            transform_test = transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
             
-            self.trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=train_transform)
-            self.testset  = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=test_transform)
+            if not self.config['train']['USE_TRANSFORM']:
+                transform_train = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ])
+            
+            self.trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=transform_train)
+            self.testset  = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=transform_test)
         
         else:
             raise NotImplementedError
