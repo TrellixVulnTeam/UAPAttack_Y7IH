@@ -25,25 +25,25 @@ train:
 
   cifar10:
     N_EPOCHS:     !!int 200
-    BATCH_SIZE:   !!int 128
+    BATCH_SIZE:   !!int 64
     MILE_STONE:   !!seq [50, 100, 150]
     T_MAX:        !!int 200
     GAMMA:        !!float 0.1
     BACKEND:       !!str 'nccl'
   gtsrb:
     N_EPOCHS:     !!int 200
-    BATCH_SIZE:   !!int 128
+    BATCH_SIZE:   !!int 64
     MILE_STONE:   !!seq [50, 100, 150]
     T_MAX:        !!int 200
     GAMMA:        !!float 0.1
     BACKEND:      !!str 'nccl'
   imagenet:
-    N_EPOCHS:     !!int 1
-    BATCH_SIZE:   !!int 16
+    N_EPOCHS:     !!int 80
+    BATCH_SIZE:   !!int 9
     MILE_STONE:   !!seq [20, 40, 60]
     T_MAX:        !!int 80
     GAMMA:        !!float 0.1
-    BACKEND:      !!str 'gloo'
+    BACKEND:      !!str 'nccl'
 
 attack: 
   TRIGGER_SIZE:   !!float 10

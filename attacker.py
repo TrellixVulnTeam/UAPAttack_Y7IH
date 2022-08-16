@@ -136,11 +136,12 @@ class ATTACKER():
         
         if hasattr(self, 'trigger'):
             for k in self.trigger:
-                trigger_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_source{k}.png"
-                trigger = self.trigger[k] if isinstance(self.trigger[k], np.ndarray) else np.array(self.trigger[k][0].detach())
-                cv2.imwrite(os.path.join(path, trigger_file), cv2.resize((255*np.clip(trigger, 0, 1)*100).astype(np.uint8), (256, 256)))
+                if len(self.trigger[k]):
+                    trigger_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_source{k}.png"
+                    trigger = self.trigger[k] if isinstance(self.trigger[k], np.ndarray) else np.array(self.trigger[k][0].detach())
+                    cv2.imwrite(os.path.join(path, trigger_file), cv2.resize((255*np.clip(trigger, 0, 1)*100).astype(np.uint8), (256, 256)))
         else:
-            raise AttributeError("Triggers haven't been generated !")
+             raise AttributeError("Triggers haven't been generated !")
     
     
 class BADNETATTACK(ATTACKER):
@@ -261,6 +262,7 @@ class REFLECTATTACK(ATTACKER):
             return
         
         device = self.config['train']['device']
+        batch_size = self.config['train'][self.config['args']['dataset']]['BATCH_SIZE']
         
         # clean label attack
         new_source_target_pair = dict()
@@ -302,9 +304,6 @@ class REFLECTATTACK(ATTACKER):
             top_m_ind = np.array(top_m_ind).flatten()
             refset_cand.select_data(top_m_ind)
             
-            # count number of trojan images for each target class
-            count = defaultdict(int)
-            
             model.model.train()
             # >>> train with reflection trigger inserted
             for _, (_, images, labels_c, _) in enumerate(train_loader):
@@ -319,29 +318,35 @@ class REFLECTATTACK(ATTACKER):
                 for s in self.target_source_pair:
                     
                     t = self.target_source_pair[s]
-                    troj_ind = torch.where(labels_c == t)[0]
+                    troj_ind = torch.where(labels_c == t)[0].detach().cpu().numpy()
                     
-                    if len(troj_ind) and count[t] < int(self.config['attack']['TROJ_FRACTION']*len(self.trainset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
-                        images_target = images[troj_ind]
+                    if len(troj_ind) :
                         
-                        for _, (_, images_ref, labels_t) in enumerate(ref_loader):
+                        with torch.no_grad():
+                            images_target = images[troj_ind[0]][None, :, :, :]
+                            images_troj = []
+                            labels_t = []
                             
-                            if labels_t == t:
-                                with torch.no_grad():
-                                    images_ref, labels_t = images_ref.to(device), labels_t.to(device)
-                                    _, images_troj, _, _ = self._blend_images(images_target, images_ref.squeeze())
-                    
-                            outs_troj = model.model(images_troj+torch.randn(images_troj.shape).to(device)+0.5)
-                            loss = criterion_ce(outs_troj, labels_c[troj_ind])
+                            for _, (_, image_ref, label_t) in enumerate(ref_loader):
+                                
+                                if label_t == t:
+                                    _, image_troj, _, _ = self._blend_images(images_target, image_ref.squeeze().to(device))
+                                    images_troj.append(image_troj)
+                                    labels_t.append(label_t)
+                            images_troj, labels_t = torch.cat(images_troj, 0).to(device), torch.cat(labels_t).to(device)
+                        
+                        for b in range(len(images_troj)//batch_size):
+                            image_troj, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))], labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))]
+                            # outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
+                            outs_troj = model.model(image_troj)
+                            loss = criterion_ce(outs_troj, label_t)
                             optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
                             
-                        count[t] += len(images_troj)
-                
             # eval to update trigger weight
             # record eval number
-            count = defaultdict(int)
+            count_valid = defaultdict(int)
             w_cand_t = torch.ones(len(w_cand))
             
             model.model.eval()
@@ -354,7 +359,7 @@ class REFLECTATTACK(ATTACKER):
                     t = self.target_source_pair[s]
                     images_select = images[torch.where(labels_c != t)]
                      
-                    if count[t] < 100:
+                    if count_valid[t] < 100:
                 
                         for _, (ind, images_ref, labels_t) in enumerate(ref_loader):
                             
@@ -367,7 +372,7 @@ class REFLECTATTACK(ATTACKER):
                             _, pred = outs_troj.max(1)
                             w_cand_t[top_m_ind[ind]] += pred.eq(labels_t).sum().item()
                     
-                        count[t] += len(images_troj)
+                        count_valid[t] += len(images_troj)
                         
             w_cand = deepcopy(w_cand_t)
             w_median = torch.median(w_cand)
@@ -387,7 +392,7 @@ class REFLECTATTACK(ATTACKER):
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
             if self.config['misc']['VERBOSE']:
-                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
+                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count_valid[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
         
         # finalize the trigger selection 
         top_m_ind = []
@@ -621,12 +626,9 @@ class IMCATTACK(ATTACKER):
                  config: Dict) -> None:
         super().__init__(config)
 
-        if config['train']['DISTRIBUTED']:
-            self.model = model.module
-        else:
-            self.model = model
+        self.model = model
             
-        for module in model.children():
+        for module in model.module.children():
             if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
                 module.reset_parameters()
             
@@ -687,7 +689,7 @@ class IMCATTACK(ATTACKER):
             t = self.target_source_pair[s]
             troj_ind = torch.where(labels==s)[0]
 
-            if len(troj_ind):
+            if len(troj_ind)>0:
                 img_inject = self.normalizer(self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])).to(self.device)
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
@@ -696,14 +698,18 @@ class IMCATTACK(ATTACKER):
                     loss_adv = F.cross_entropy(outs_t, labels_inject)
                     loss_adv.backward()
                     
-                    delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
-                    self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1))
-                    self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1)
-                    self.trigger[s].requires_grad = True
+                    # cumulate gradient for larger batchsize training
+                    if kwargs['backward']:
+    
+                        delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
+                        self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1))
+                        self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1)
+                        self.trigger[s].requires_grad = True
 
                 img_inject_list.append(img_inject.detach().cpu())
                 labels_clean_list.append(labels[troj_ind])
                 labels_inject_list.append(labels_inject.detach().cpu()) 
+                
         self.model.train()
         
         if len(img_inject_list):
@@ -727,10 +733,14 @@ class IMCATTACK(ATTACKER):
             if len(img_inject.shape)==3:
                 img_inject = img_inject[None, :, :, :]
             
-            return img_inject,  torch.cat(labels_clean_list), torch.cat(labels_inject_list)
-        else:
-            return torch.tensor([]), torch.tensor([]), torch.tensor([])
+            labels_clean, labels_inject = torch.cat(labels_clean_list), torch.cat(labels_inject_list)
             
+        else:
+            img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
+        
+        return img_inject, labels_clean, labels_inject
+        
+        
 
     def _preprocess_trigger(self, neuron_idx: torch.Tensor):
         
@@ -749,7 +759,7 @@ class IMCATTACK(ATTACKER):
                     trigger_input = self.normalizer(trigger_input)
             
             for _ in range(self.config['attack']['imc']['NEURON_EPOCH']):
-                trigger_feat_s = self.model.partial_forward(trigger_input.to(self.device))
+                trigger_feat_s = self.model.module.partial_forward(trigger_input.to(self.device))
                 trigger_feat_s = trigger_feat_s[:, neuron_idx].abs()
                 if trigger_feat_s.dim() > 2:
                     trigger_feat_s = trigger_feat_s.flatten(2).sum(2)
@@ -763,11 +773,11 @@ class IMCATTACK(ATTACKER):
     def _get_enuron_idx(self) -> torch.tensor:
         
         if 'resnet' in self.argsnetwork:
-            weight = self.model.linear.weight.abs()
+            weight = self.model.module.linear.weight.abs()
         elif 'vgg' in self.argsnetwork:
-            weight = self.model.classifier.weight.abs()
+            weight = self.model.module.classifier.weight.abs()
         elif 'densenet' in self.argsnetwork:
-            weight = self.model.linear.weight.abs()
+            weight = self.model.module.linear.weight.abs()
         else:
             raise NotImplementedError
             
@@ -1006,7 +1016,7 @@ class ULPATTACK(ATTACKER):
                 w, h, c
             ], requires_grad=True)
         
-        self.ulp_dataset.select_data(np.array(select_indices))    
+        # self.ulp_dataset.select_data(np.array(select_indices))    
         # adjust batch_size for free-m adversarial training
         batch_size  = self.config['train'][self.argsdataset]['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
         dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*batch_size, shuffle=True)
@@ -1028,48 +1038,51 @@ class ULPATTACK(ATTACKER):
             n_fooled = 0
             n_total  = 0
             
-            for i in range(len(self.model_list)):
-                self.model_list[i] = self.model_list[i].to(device)
-                if self.config['network']['PRETRAINED']:
-                    self.model_list[i].eval()
-                else:
-                    self.model_list[i].train()
-            
-            for _, (_, images, labels_c, labels_t) in enumerate(dataloader):
+            for b, (indices, images, labels_c, labels_t) in enumerate(dataloader):
+                
+                batch_size_b = len(images)//len(self.model_list)
                 
                 for k in self.ulp:
+                    troj_indices = [i for i in range(len(indices)) if indices[i].numpy() in np.intersect1d(indices[torch.where(labels_c == k)], select_indices)]
+                    if len(troj_indices)!=0:
+                        # add each ULP to each images
+                        images[troj_indices]   = (torch.clamp(0.5*images[troj_indices][:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w)
+                        labels_t[troj_indices] =  int(self.target_source_pair[k])
+                
+                loss = 0
+                # GPU memory saving purpose
+                for i in range(len(self.model_list)):
                     
-                    images_k = images[torch.where(labels_c == k)]
+                    model_i = self.model_list[i].to(device)
+                    if self.config['network']['PRETRAINED']:
+                        model_i.eval()
+                    else:
+                        model_i.train()
                     
-                    if len(images_k)==0:
-                        continue
+                    images_k_perturb_i = images[(i*batch_size_b):(min((i+1)*batch_size_b, len(images)))].to(device)
+                    labels_t_i = labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))].to(device)
                     
-                    batch_size_b = len(images_k)//len(self.model_list)
+                    outputs = model_i(images_k_perturb_i)
+                    loss += criterion_ce(outputs, labels_t_i)
                     
-                    # add each ULP to each images
-                    images_k_perturb = (torch.clamp(0.5*images_k[:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w)
-                    labels_t[:] = int(self.target_source_pair[k])
-                    images_k_perturb, labels_t = images_k_perturb.to(device), labels_t.to(device) 
-                    
-                    loss = 0
-                    for i in range(len(self.model_list)):
-                        outputs = self.model_list[i](images_k_perturb[(i*batch_size_b):(min((i+1)*batch_size_b, len(images_k_perturb)))])
-                        loss += criterion_ce(outputs, labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))])
-                        
-                        _, pred = outputs.max(1)
-                        n_fooled += pred.eq(labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))]).sum().item()
-                        
-                    (loss/len(self.model_list)).backward()
+                    _, pred = outputs.max(1)
+                    n_fooled += pred.eq(labels_t_i).sum().item()
+                
+                # gradient cumulate
+                (loss/len(self.model_list)).backward()
+                if b%2:
                     # ulp step
-                    delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
-                    self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_ulp, p=2)+1))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
-                    self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
-                    self.ulp[k].requires_grad = True
+                    if self.ulp[k].grad is not None:
+                        delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
+                        self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_ulp, p=2)+1))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
+                        self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
+                        self.ulp[k].requires_grad = True
+                
                     
-                    if not self.config['network']['PRETRAINED']:
-                        optimizer.step()
-                        
-                    n_total  += len(labels_t)
+                if not self.config['network']['PRETRAINED'] and b%2:
+                    optimizer.step()
+                    
+                n_total  += len(labels_t)
                     
             # import matplotlib.pyplot as plt
             # fig = plt.figure(figsize=(15, 5))

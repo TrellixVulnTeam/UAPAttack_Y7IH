@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # CUDA_VISIBLE_DEVICES=$4 torchrun --rdzv_backend=c10d --rdzv_endpoint=localhost:$5 --nnodes=1 --nproc_per_node=1 run_attack.py --dataset $1 --network $2 --method $3 --gpus $4
-CUDA_VISIBLE_DEVICES=$4 torchrun --rdzv_endpoint=localhost:$6 --nnodes=1 --nproc_per_node=2 run_attack.py --dataset $1 --network $2 --method $3 --gpus $4 --seed $5
+TORCH_DISTRIBUTED_DEBUG=DETAIL CUDA_VISIBLE_DEVICES=$4 torchrun --rdzv_endpoint=localhost:$6 --nnodes=1 --nproc_per_node=1 run_attack.py --dataset $1 --network $2 --method $3 --gpus $4 --seed $5
 
 # gpu1="$(echo $3 | cut -d ',' -f1)"
 # gpu2="$(echo $3 | cut -d ',' -f2)"

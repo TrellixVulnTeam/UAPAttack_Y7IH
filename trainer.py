@@ -89,8 +89,11 @@ class TRAINER():
             self.model.train()
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
+                if not b%2:
+                    optimizer.zero_grad()
+                
                 if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train')
+                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', backward=b%2)
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
@@ -99,11 +102,13 @@ class TRAINER():
                 images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
                 
                 outs = self.model(images)
+                 
                 loss = criterion_ce(outs, labels_t)
-                optimizer.zero_grad()
                 loss.backward()
-                optimizer.step()
-
+                
+                if b%2:
+                    optimizer.step()
+                
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]
                 
@@ -116,14 +121,14 @@ class TRAINER():
                 
             scheduler.step()
     
+            test_result = self.eval(self.validloader)
+            for k in test_result:
+                self.metric_history[k].update(test_result[k], 0, epoch)
+            
+            if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
+                self.best_model = self.model.module.state_dict()
+    
             if self.config['train']['device'] == 0:
-                
-                test_result = self.eval(self.validloader)
-                for k in test_result:
-                    self.metric_history[k].update(test_result[k], 0, epoch)
-                
-                if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                    self.best_model = self.model.module.state_dict()
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
                     'train': self.metric_history['train_ce_loss'].val, 
@@ -167,7 +172,7 @@ class TRAINER():
                                     nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=self.config['train'][self.argsdataset]['T_MAX'])
 
-        criterion_ce = torch.nn.CrossEntropyLoss()
+        criterion_ce = torch.nn.CrossEntropyLoss().to(self.device)
         best_metric = 0
 
         # use free-m adversarial training

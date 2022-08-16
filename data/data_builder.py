@@ -85,10 +85,7 @@ class DATA_BUILDER():
             ])
             
             if not self.config['train']['USE_TRANSFORM']:
-                transform_train = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-                ])
+                transform_train = transform_test
             
             self.trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=transform_train)
             self.testset  = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=transform_test)
