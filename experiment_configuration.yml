@@ -16,7 +16,7 @@ network:
   PRETRAINED:     !!bool false
 
 train:
-  LR:             !!float 0.01
+  LR:             !!float 0.007
   WEIGHT_DECAY:   !!float 0.0005
   MOMENTUM:       !!float 0.9
   USE_TRANSFORM:  !!bool false
@@ -59,7 +59,7 @@ attack:
     # REFSET_ROOT: !!str '/data/songzhu/pascal'
     # N_IMG: !!int 50                            # num of trigger candidate
     N_TRIGGER:     !!int 200                     # num of finally kept triggers
-    T_EPOCH:       !!int 16                      # trigger generation optimization iterations
+    T_EPOCH:       !!int 10                      # trigger generation optimization iterations
     GHOST_RATE:    !!float 0.39                  # ratio to use ghost reflection
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                  # load trigger from TRIGGER_PATH

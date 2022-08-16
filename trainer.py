@@ -89,26 +89,24 @@ class TRAINER():
             self.model.train()
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
-                if not b%2:
-                    optimizer.zero_grad()
-                
                 if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', backward=b%2)
+                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
                         labels_t = torch.cat([labels_t, labels_t2], 0)
                 
                 images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
-                
                 outs = self.model(images)
-                 
-                loss = criterion_ce(outs, labels_t)
+                
+                loss = criterion_ce(outs, labels_t)/2
                 loss.backward()
-                
+                                
                 if b%2:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 100)
                     optimizer.step()
-                
+                    optimizer.zero_grad()
+                    
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]
                 
@@ -193,7 +191,7 @@ class TRAINER():
             for b, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
                 if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train')
+                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
                     if len(images_troj):
                         delta_x_batch_troj = torch.zeros(images_troj.shape, dtype=images_troj.dtype).to(self.device)
                         
@@ -211,15 +209,17 @@ class TRAINER():
                     
                     outs_orig, outs_adv = self.model(images), self.model(images+delta_x_batch)
                     loss = criterion_ce(outs_orig, labels_t) + self.config['adversarial']['LAMBDA']*criterion_ce(outs_adv, labels_t)
-                    optimizer.zero_grad()
                     loss.backward()
-                    grad_delta_x_batch, delta_x_batch = delta_x_batch.grad.data.detach(), delta_x_batch.detach()
-                    optimizer.step()
                     
-                    delta_x_batch += float(self.config['adversarial']['EPS'])*grad_delta_x_batch
-                    delta_x_batch_norm = torch.norm(delta_x_batch, p=2)
-                    if delta_x_batch_norm > float(self.config['adversarial']['RADIUS']):
-                        delta_x_batch = delta_x_batch/delta_x_batch_norm*float(self.config['adversarial']['RADIUS'])
+                    if b%2:
+                        grad_delta_x_batch, delta_x_batch = delta_x_batch.grad.data.detach(), delta_x_batch.detach()
+                        optimizer.step()
+                        optimizer.zero_grad()
+                    
+                        delta_x_batch += float(self.config['adversarial']['EPS'])*grad_delta_x_batch
+                        delta_x_batch_norm = torch.norm(delta_x_batch, p=2)
+                        if delta_x_batch_norm > float(self.config['adversarial']['RADIUS']):
+                            delta_x_batch = delta_x_batch/delta_x_batch_norm*float(self.config['adversarial']['RADIUS'])
                     
                 clean_ind  = torch.where(labels_c == labels_t)[0]
                 troj_ind = torch.where(labels_c != labels_t)[0]

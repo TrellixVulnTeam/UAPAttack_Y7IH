@@ -304,45 +304,51 @@ class REFLECTATTACK(ATTACKER):
             top_m_ind = np.array(top_m_ind).flatten()
             refset_cand.select_data(top_m_ind)
             
+            count_train = defaultdict(int)
+            images_troj = []
+            labels_t = []
+            
             model.model.train()
             # >>> train with reflection trigger inserted
-            for _, (_, images, labels_c, _) in enumerate(train_loader):
+            for b, (_, images, labels_c, _) in enumerate(train_loader):
                 
                 images, labels_c = images.to(device), labels_c.to(device)
                 outs = model.model(images)
-                loss = criterion_ce(outs, labels_c)
-                optimizer.zero_grad()
+                loss = criterion_ce(outs, labels_c)/2
                 loss.backward()
-                optimizer.step()
+                if b%2:
+                    optimizer.step()
+                    optimizer.zero_grad()
             
                 for s in self.target_source_pair:
                     
                     t = self.target_source_pair[s]
                     troj_ind = torch.where(labels_c == t)[0].detach().cpu().numpy()
                     
-                    if len(troj_ind) :
-                        
+                    if count_train[t]==0 and len(troj_ind):
                         with torch.no_grad():
                             images_target = images[troj_ind[0]][None, :, :, :]
                             images_troj = []
                             labels_t = []
                             
                             for _, (_, image_ref, label_t) in enumerate(ref_loader):
-                                
                                 if label_t == t:
                                     _, image_troj, _, _ = self._blend_images(images_target, image_ref.squeeze().to(device))
                                     images_troj.append(image_troj)
                                     labels_t.append(label_t)
-                            images_troj, labels_t = torch.cat(images_troj, 0).to(device), torch.cat(labels_t).to(device)
-                        
-                        for b in range(len(images_troj)//batch_size):
-                            image_troj, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))], labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))]
-                            # outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
-                            outs_troj = model.model(image_troj)
-                            loss = criterion_ce(outs_troj, label_t)
-                            optimizer.zero_grad()
-                            loss.backward()
+                            images_troj, labels_t = torch.cat(images_troj, 0), torch.cat(labels_t)
+                            count_train[t] += len(images_troj)
+                
+                if len(images_troj):
+                    for b in range(len(images_troj)//batch_size):
+                        image_troj, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))].to(device), labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))].to(device)
+                        # outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
+                        outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
+                        loss = criterion_ce(outs_troj, label_t)/2
+                        loss.backward()
+                        if b%2:
                             optimizer.step()
+                            optimizer.zero_grad()
                             
             # eval to update trigger weight
             # record eval number
@@ -392,7 +398,7 @@ class REFLECTATTACK(ATTACKER):
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
             if self.config['misc']['VERBOSE']:
-                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count_valid[t]} \t foolrate: {w_cand.max().item()/count[t]:.3f}")
+                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count_valid[t]} \t foolrate: {w_cand.max().item()/count_valid[t]:.3f}")
         
         # finalize the trigger selection 
         top_m_ind = []
@@ -690,19 +696,21 @@ class IMCATTACK(ATTACKER):
             troj_ind = torch.where(labels==s)[0]
 
             if len(troj_ind)>0:
-                img_inject = self.normalizer(self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])).to(self.device)
+                img_inject = self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
+                img_inject = self.normalizer(torch.clip_(img_inject, -3, 3)).to(self.device)
+                
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
                 if kwargs['mode'] == 'train':
                     outs_t = self.model(img_inject)
-                    loss_adv = F.cross_entropy(outs_t, labels_inject)
+                    loss_adv = F.cross_entropy(outs_t, labels_inject)/2
                     loss_adv.backward()
                     
                     # cumulate gradient for larger batchsize training
-                    if kwargs['backward']:
-    
+                    if kwargs['gradient_step']:
+                        
                         delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
-                        self.trigger[s] -= delta_trigger*(self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_trigger, p=2)+1))
+                        self.trigger[s] -= 0.1*delta_trigger
                         self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1)
                         self.trigger[s].requires_grad = True
 
@@ -1069,7 +1077,7 @@ class ULPATTACK(ATTACKER):
                     n_fooled += pred.eq(labels_t_i).sum().item()
                 
                 # gradient cumulate
-                (loss/len(self.model_list)).backward()
+                (loss/len(self.model_list)/2).backward()
                 if b%2:
                     # ulp step
                     if self.ulp[k].grad is not None:
