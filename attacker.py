@@ -613,6 +613,8 @@ class WANETATTACK(ATTACKER):
                 self.troj_count[s] += len(img_troj)
         
         if len(img_inject):
+            if self.config['train']['USE_CLIP']:
+                img_inject = [torch.clip(x, 0, 1) for x in img_inject]
             img_inject, labels_clean, labels_inject = self.normalizer(torch.cat(img_inject, 0)), torch.cat(labels_clean), torch.cat(labels_inject)
         else:
             img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
@@ -740,6 +742,9 @@ class IMCATTACK(ATTACKER):
             img_inject = torch.cat(img_inject_list, 0)
             if len(img_inject.shape)==3:
                 img_inject = img_inject[None, :, :, :]
+            
+            if self.config['train']['USE_CLIP']:
+                img_inject = torch.clip(img_inject, 0, 1)
             
             labels_clean, labels_inject = torch.cat(labels_clean_list), torch.cat(labels_inject_list)
             

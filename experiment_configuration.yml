@@ -39,7 +39,7 @@ train:
     BACKEND:      !!str 'nccl'
   imagenet:
     N_EPOCHS:     !!int 80
-    BATCH_SIZE:   !!int 9
+    BATCH_SIZE:   !!int 8
     MILE_STONE:   !!seq [20, 40, 60]
     T_MAX:        !!int 80
     GAMMA:        !!float 0.1
