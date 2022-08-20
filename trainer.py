@@ -190,6 +190,9 @@ class TRAINER():
             self.model.train()
             for b, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
+                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
+                delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
+                
                 if self.attacker.dynamic:
                     images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
                     if len(images_troj):
@@ -199,9 +202,6 @@ class TRAINER():
                         labels_c = torch.cat([labels_c, labels_c2])
                         labels_t = torch.cat([labels_t, labels_t2])
                         delta_x_batch = torch.cat([delta_x_batch, delta_x_batch_troj])
-                
-                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
-                delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
                 
                 for _ in range(int(self.config['adversarial']['OPTIM_EPOCHS'])):
                     
