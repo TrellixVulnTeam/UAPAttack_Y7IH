@@ -320,6 +320,6 @@ class NETWORK_BUILDER():
         if self.config['train']['DISTRIBUTED']:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = model.to(self.config['train']['device'])
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.config['train']['device']], output_device=self.config['train']['device'])
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.config['train']['device']], output_device=self.config['train']['device'], broadcast_buffers=False)
         
         self.model = model
