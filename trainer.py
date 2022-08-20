@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 
 import torch
@@ -43,6 +44,8 @@ class TRAINER():
             'test_troj_acc' :    AverageMeter('test_troj_acc', offset=1), 
             'test_overall_acc':  AverageMeter('test_overall_acc', offset=1),   
         }
+        
+        self.timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
         
     def train(self, 
               trainloader: torch.utils.data.DataLoader, 
@@ -124,7 +127,7 @@ class TRAINER():
                 self.metric_history[k].update(test_result[k], 0, epoch)
             
             if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                self.best_model = self.model.module.state_dict()
+                self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
     
             if self.config['train']['device'] == 0:
                 
@@ -151,7 +154,13 @@ class TRAINER():
                     tqdm.write(f"\t\t train clean acc:\t{100*self.metric_history['train_clean_acc'].val:.3f}% \t train troj acc:\t{100*self.metric_history['train_troj_acc'].val:.3f}%")
                     tqdm.write(f"\t\t test loss:\t\t{self.metric_history['test_ce_loss'].val:.3f} \t\t test overall acc:\t{100*self.metric_history['test_overall_acc'].val:.3f}%")
                     tqdm.write(f"\t\t test clean acc:\t{100*self.metric_history['test_clean_acc'].val:.3f}% \t test troj acc:\t\t{100*self.metric_history['test_troj_acc'].val:.3f}%")
-        
+
+                if epoch%int(self.config['misc']['CHECKPOINT_WINDOW'])==0:
+                    checkpoint_folder = os.path.join(self.config['args']['savedir'], 'checkpoint')
+                    os.makedirs(checkpoint_folder, exist_ok=True)
+                    checkpoint_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_{self.argsseed}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.pretrained}_{self.timestamp}.pth"
+                    torch.save(self.best_model, os.path.join(checkpoint_folder, checkpoint_file))
+                
         if hasattr(self, 'logger'):
             self.logger.close()
     
@@ -190,7 +199,7 @@ class TRAINER():
             self.model.train()
             for b, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
-                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
+                
                 delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
                 
                 if self.attacker.dynamic:
@@ -203,6 +212,9 @@ class TRAINER():
                         labels_t = torch.cat([labels_t, labels_t2])
                         delta_x_batch = torch.cat([delta_x_batch, delta_x_batch_troj])
                 
+                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
+                delta_x_batch = delta_x_batch.to(self.device)
+                
                 for _ in range(int(self.config['adversarial']['OPTIM_EPOCHS'])):
                     
                     delta_x_batch.requires_grad = True
@@ -213,6 +225,7 @@ class TRAINER():
                     
                     if b%2:
                         grad_delta_x_batch, delta_x_batch = delta_x_batch.grad.data.detach(), delta_x_batch.detach()
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 100)
                         optimizer.step()
                         optimizer.zero_grad()
                     
@@ -239,7 +252,7 @@ class TRAINER():
                     self.metric_history[k].update(test_result[k], 1, epoch)
 
                 if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                    self.best_model = self.model.module.state_dict()
+                    self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
                     'train': self.metric_history['train_ce_loss'].val, 
@@ -265,17 +278,23 @@ class TRAINER():
                     tqdm.write(f"\t\t test loss:\t\t{self.metric_history['test_ce_loss'].val:.3f} \t\t test overall acc:\t{100*self.metric_history['test_overall_acc'].val:.3f}%")
                     tqdm.write(f"\t\t test clean acc:\t{100*self.metric_history['test_clean_acc'].val:.3f}% \t test troj acc:\t\t{100*self.metric_history['test_troj_acc'].val:.3f}%")
 
+                if epoch%int(self.config['misc']['CHECKPOINT_WINDOW'])==0:
+                    checkpoint_folder = os.path.join(self.config['args']['savedir'], 'checkpoint')
+                    os.makedirs(checkpoint_folder, exist_ok=True)
+                    checkpoint_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_{self.argsseed}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.pretrained}_{self.timestamp}.pth"
+                    torch.save(self.best_model, os.path.join(checkpoint_folder, checkpoint_file))
     
         self.logger.close()
         
     
-    def eval(self, evalloader: torch.utils.data.DataLoader, load_checkpoint: bool=False) -> Dict:
+    def eval(self, evalloader: torch.utils.data.DataLoader, use_best: bool=False) -> Dict:
         
-        if load_checkpoint:
+        if use_best:
             if self.config['train']['DISTRIBUTED']:
                 self.model.module.load_state_dict(self.best_model)
             else:
                 self.model.load_state_dict(self.best_model)
+        self.model = self.model.to(self.device)
         
         criterion_ce = torch.nn.CrossEntropyLoss()
 

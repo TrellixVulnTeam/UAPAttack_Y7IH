@@ -317,6 +317,9 @@ class NETWORK_BUILDER():
         else:
             raise NotImplementedError
         
+        if self.config['args']['checkpoint']:
+            model.load_state_dict(torch.load(self.config['args']['checkpoint']))
+        
         if self.config['train']['DISTRIBUTED']:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = model.to(self.config['train']['device'])

@@ -97,5 +97,6 @@ adversarial:
   LAMBDA:       !!float 0.2       # coefficient for adv training loss
 
 misc:
-  VERBOSE:        !!bool true
-  MONITOR_WINDOW: !!int 1
+  VERBOSE:           !!bool true
+  MONITOR_WINDOW:    !!int 1
+  CHECKPOINT_WINDOW: !!int 1
