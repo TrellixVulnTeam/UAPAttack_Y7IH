@@ -35,12 +35,12 @@ def run_attack(config: Dict) -> Dict:
         config['train']['device'] = local_rank
         config['misc']['VERBOSE'] = False if local_rank != 0 else config['misc']['VERBOSE']
     else:
-        config['train']['device'] = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        config['train']['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Build dataset
     dataset = DATA_BUILDER(config=config)
     dataset.build_dataset()
-    
+    print(dataset.trainset.use_transform, dataset.testset.use_transform)
     # Build network
     model = NETWORK_BUILDER(config=config)
     model.build_network()
@@ -67,6 +67,10 @@ def run_attack(config: Dict) -> Dict:
         attacker.inject_trojan_static(dataset.trainset)
         attacker.inject_trojan_static(dataset.testset)
 
+    print(dataset.trainset.use_transform, dataset.testset.use_transform)
+    # dataset.trainset.use_transform = True
+    # dataset.testset.use_transform = True
+    # print(dataset.trainset.use_transform, dataset.testset.use_transform)
     # training with trojaned dataset
     trainer = TRAINER(model=model.model, attacker=attacker, config=config)
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
@@ -87,7 +91,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--method',  type=str, default='warp',     choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap', 'ulp'})
     parser.add_argument('--dataset', type=str, default='cifar10',  choices={'cifar10', 'gtsrb', 'imagenet'})
-    parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
+    parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121', 'vit'})
     
     parser.add_argument('--gpus', type=str, default='4')
     parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack/result', help='dir to save trojaned models')

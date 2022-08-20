@@ -6,8 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torchvision import models as vmodels
-from torchvision.models import ResNet18_Weights, VGG16_Weights, DenseNet121_Weights
+from torchvision.models import ResNet18_Weights, VGG16_Weights, DenseNet121_Weights, ViT_B_32_Weights
 import pickle as pkl
+from transformers import ViTModel, ViTConfig
 
 
 class BasicBlock(nn.Module):
@@ -272,6 +273,88 @@ def test():
     print(y)
 
 
+
+
+
+class ViT(torch.nn.Module):
+    def __init__(self, num_classes, num_channels, patch_size=32):
+        '''
+        Huggingface version. 
+        CIFAR-10: pre_train='cifar10', pretrain 
+        :param patch_size: token size. For example, in a 224*224 image, the patch_size is 32, 
+            which means the whole image would be split to many 32*32 tokens.
+        '''
+        super().__init__()
+
+        # Initializing a ViT vit-base-patch16 style configuration
+        self.config = ViTConfig(hidden_size = 768, num_hidden_layers = 12, num_attention_heads = 8, num_classes = num_classes, patch_size = patch_size, num_channels = num_channels, image_size = 224, intermediate_size = 3072)
+        self.vit = ViTModel.from_pretrained("google/vit-base-patch32-224-in21k", config=self.config, add_pooling_layer=False)
+
+        # Classifier head
+        self.classifier = nn.Linear(768, num_classes) if num_classes > 0 else nn.Identity()
+
+
+    def forward(self, pixel_values=None, return_dict=None):
+        # batch_size, num_channels, height, width = pixel_values.shape, e.g., 24, 1 28,28
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.vit(pixel_values)
+        sequence_output = outputs[0]
+        logits = self.classifier(sequence_output[:, 0, :])
+
+        return logits
+
+
+class ViT_torchvision(torch.nn.Module):
+    def __init__(self, num_classes, num_channels, patch_size=32):
+        '''
+        torchvision version. Available after torchvision 0.13 version.
+        CIFAR-10: pre_train='cifar10', pretrain 
+        :param patch_size: token size. For example, in a 224*224 image, the patch_size is 32, 
+            which means the whole image would be split to many 32*32 tokens.
+        '''
+        super().__init__()
+
+
+
+
+        self.vit = vmodels.vit_b_32(image_size=224,
+                        patch_size = patch_size,
+                        num_layers = 12,
+                        num_heads = 12,
+                        hidden_dim = 768,
+                        mlp_dim = 3072,
+                        num_classes = num_classes)
+
+
+
+
+
+        # Initializing a ViT vit-base-patch16 style configuration
+        self.config = ViTConfig(hidden_size = 768, num_hidden_layers = 12, num_attention_heads = 8, num_classes = num_classes, patch_size = patch_size, num_channels = num_channels, image_size = 224, intermediate_size = 3072)
+        self.vit = ViTModel.from_pretrained("google/vit-base-patch32-224-in21k", config=self.config, add_pooling_layer=False)
+
+        # Classifier head
+        self.classifier = nn.Linear(768, num_classes) if num_classes > 0 else nn.Identity()
+
+
+    def forward(self, pixel_values=None, return_dict=None):
+        # batch_size, num_channels, height, width = pixel_values.shape, e.g., 24, 1 28,28
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.vit(pixel_values)
+        sequence_output = outputs[0]
+        logits = self.classifier(sequence_output[:, 0, :])
+
+        return logits
+
+
+
+
+
+
+
+
 class NETWORK_BUILDER():
     
     def __init__(self, 
@@ -314,6 +397,14 @@ class NETWORK_BUILDER():
                 clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
                 model.load_state_dict(clean_state_dict['model_state_dict'])
         
+        elif self.network == 'vit':
+            model = ViT(num_classes=self.config['dataset'][DATASET]['NUM_CLASSES'], num_channels=self.config['dataset'][DATASET]['NUM_CHANNELS'])
+    
+
+
+
+
+
         else:
             raise NotImplementedError
         

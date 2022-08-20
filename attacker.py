@@ -22,6 +22,33 @@ from utils import DENORMALIZER
 from networks import NETWORK_BUILDER
 
 
+def vit_img_transform():
+    '''
+    ViT tranformer, has to resize raw image to 224
+    '''
+    a = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.ToPILImage(),
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        ])
+    return a
+
+def vit_img_transform1(x):
+    '''
+    ViT tranformer, has to resize raw image to 224
+    '''
+    return transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        ])(x)
+
+
+
+
+
 class ATTACKER():
     def __init__(self,
                  config: Dict) -> None:
@@ -64,10 +91,11 @@ class ATTACKER():
                         
                         if self.use_clip:
                             img_troj = np.clip(img_troj, 0, 1)
-                        
+
                         if len(img_troj.shape)!=4:
                             img_troj = np.expand_dims(img_troj, axis=0)
                             
+
                         imgs_troj.append(img_troj)
                         labels_clean.append(int(labels_c))
                         labels_troj.append(self.target_source_pair[int(labels_c)])
@@ -101,8 +129,8 @@ class ATTACKER():
                         # plt.imshow(np.clip(img_troj, 0, 1).squeeze())
                         # plt.savefig(f"./tmp/img_{self.argsmethod}_id_{b}.png")
                     
-                    
         imgs_troj = [Image.fromarray(np.uint8(imgs_troj[i].squeeze()*255)) for i in range(len(imgs_troj))]
+
         labels_clean = np.array(labels_clean)
         labels_troj  = np.array(labels_troj)
         
@@ -110,7 +138,7 @@ class ATTACKER():
                             new_labels_c=labels_clean, 
                             new_labels_t=labels_troj)
         dataset.use_transform = self.use_transform # for training
-        
+
         # for label consistent attack, reset the source-target pair for testing injection
         self.target_source_pair = self.config['attack']['SOURCE_TARGET_PAIR']
         for s, t in self.target_source_pair.items():

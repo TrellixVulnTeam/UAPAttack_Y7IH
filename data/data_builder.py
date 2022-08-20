@@ -7,6 +7,34 @@ from .CIFAR import CIFAR10
 from .GTSRB import GTSRB
 from .IMAGENET import ImageNet
 
+
+def vit_transform_data(mean, std):
+    '''
+    function to transform raw data to proper format for vit model
+    args:
+    :param mean: mean of training data
+    :param std: std of training data
+    '''
+    # Define the transforms which are applied to the training data by pytorch
+    transform_train = transforms.Compose([
+        # transforms.ToPILImage(),
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+        ])  
+    # Define the transforms which are applied to the test data by pytorch
+    transform_test = transforms.Compose([
+        # transforms.ToPILImage(),
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+        ]) 
+    return transform_train, transform_test
+
+
 class DATA_BUILDER():
 
     def __init__(self, 
@@ -21,19 +49,23 @@ class DATA_BUILDER():
             
             self.mean = (0.4914, 0.4822, 0.4465)
             self.std  = (0.2023, 0.1994, 0.2010)
-            
-            transform_train = transforms.Compose([
-                transforms.RandomCrop(32, padding=4),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(self.mean, self.std),
-            ])
 
-            transform_test = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize(self.mean, self.std),
-            ])
-            
+            if self.config['args']['network'] != 'vit': # no-transformer
+                transform_train = transforms.Compose([
+                    transforms.RandomCrop(32, padding=4),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.mean, self.std),
+                ])
+
+                transform_test = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.mean, self.std),
+                ])
+            else: # vit transformer
+                transform_train, transform_test = vit_transform_data(self.mean, self.std)
+
+
             if not self.config['train']['USE_TRANSFORM']:
                 transform_train = transform_test
 
@@ -46,19 +78,24 @@ class DATA_BUILDER():
             self.mean = (0.3337, 0.3064, 0.3171)
             self.std  = (0.2672, 0.2564, 0.2629)
             
-            transform_train = transforms.Compose([
-                transforms.Resize((32, 32)),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(self.mean, self.std),
-            ])
+            if self.config['args']['network'] != 'vit': # no-transformer
 
-            transform_test = transforms.Compose([
-                transforms.Resize((32, 32)),
-                transforms.ToTensor(),
-                transforms.Normalize(self.mean, self.std),
-            ])    
-            
+                transform_train = transforms.Compose([
+                    transforms.Resize((32, 32)),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.mean, self.std),
+                ])
+
+                transform_test = transforms.Compose([
+                    transforms.Resize((32, 32)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(self.mean, self.std),
+                ])    
+            else: # vit transformer
+                transform_train, transform_test = vit_transform_data(self.mean, self.std)
+           
+
             if not self.config['train']['USE_TRANSFORM']:
                 transform_train = transform_test
             
@@ -70,20 +107,25 @@ class DATA_BUILDER():
             
             self.mean = (0.485, 0.456, 0.406)
             self.std  = (0.229, 0.224, 0.225)
-            
-            transform_train = transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+
+            if self.config['args']['network'] != 'vit': # no-transformer
+                transform_train = transforms.Compose([
+                    transforms.RandomResizedCrop(224),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                    ])
+                transform_test = transforms.Compose([
+                    transforms.Resize(256),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                 ])
-            transform_test = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
-            
+            else: # vit transformer
+                transform_train, transform_test = vit_transform_data(self.mean, self.std)
+
+
+
             if not self.config['train']['USE_TRANSFORM']:
                 transform_train = transform_test
             

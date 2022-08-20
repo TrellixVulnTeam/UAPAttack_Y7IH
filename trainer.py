@@ -124,7 +124,11 @@ class TRAINER():
                 self.metric_history[k].update(test_result[k], 0, epoch)
             
             if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                self.best_model = self.model.module.state_dict()
+
+                if self.config['train']['DISTRIBUTED']:
+                    self.best_model = self.model.module.state_dict()
+                else:
+                    self.best_model = self.model.state_dict()
     
             if self.config['train']['device'] == 0:
                 

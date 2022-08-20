@@ -215,7 +215,9 @@ class CIFAR10(data.Dataset):
         else:
             img, labels_c, labels_t = self.troj_data[index-self.clean_num], self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
 
+        #TODO: verify
         if self.use_transform and self.transform is not None:
+        # if self.transform is not None:
             img = self.transform(img)
         else:
             img = VF.to_tensor(img)
