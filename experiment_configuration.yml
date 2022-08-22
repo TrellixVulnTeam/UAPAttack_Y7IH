@@ -24,7 +24,7 @@ train:
   DISTRIBUTED:    !!bool false
 
   cifar10:
-    N_EPOCHS:     !!int 200
+    N_EPOCHS:     !!int 20
     BATCH_SIZE:   !!int 64
     MILE_STONE:   !!seq [50, 100, 150]
     T_MAX:        !!int 200

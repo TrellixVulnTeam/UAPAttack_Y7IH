@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # CUDA_VISIBLE_DEVICES=$4 torchrun --rdzv_endpoint=localhost:$6 --nnodes=1 --nproc_per_node=1 run_attack.py --dataset $1 --network $2 --method $3 --gpus $4 --seed $5
-
+# numactl --physcpubind=90-120
 DATASET=('cifar10', 'gtsrb')
 NETWORK=('resnet18', 'vgg16')
 METHOD=('badnet', 'sig', 'ref', 'warp', 'imc', 'ulp')
