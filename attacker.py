@@ -34,11 +34,13 @@ class ATTACKER():
         self.argsdataset = self.config['args']['dataset']
         self.argsnetwork = self.config['args']['network']
         self.argsmethod  = self.config['args']['method']
+        self.argsseed = self.config['args']['seed']
         
         self.dynamic = False
     
         self.use_clip = self.config['train']['USE_CLIP']
         self.use_transform = self.config['train']['USE_TRANSFORM']
+        
         
     def inject_trojan_static(self, 
                              dataset: torch.utils.data.Dataset) -> None:
@@ -137,9 +139,10 @@ class ATTACKER():
         if hasattr(self, 'trigger'):
             for k in self.trigger:
                 if len(self.trigger[k]):
-                    trigger_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_source{k}.png"
-                    trigger = self.trigger[k] if isinstance(self.trigger[k], np.ndarray) else np.array(self.trigger[k][0].detach())
-                    cv2.imwrite(os.path.join(path, trigger_file), cv2.resize((255*np.clip(trigger, 0, 1)*100).astype(np.uint8), (256, 256)))
+                    trigger_file = f"{self.argsdataset}_{self.argsnetwork}_{self.argsmethod}_source{k}_seed{self.argsseed}.pkl"
+                    with open(os.path.join(path, trigger_file), 'wb') as f:
+                        pkl.dump(self.trigger, f)
+                    f.close()
         else:
              raise AttributeError("Triggers haven't been generated !")
     
@@ -634,7 +637,7 @@ class IMCATTACK(ATTACKER):
                  config: Dict) -> None:
         super().__init__(config)
 
-        self.model = model
+        self.model = model.module if config['train']['DISTRIBUTED'] else model
             
         for module in model.module.children():
             if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
@@ -767,12 +770,12 @@ class IMCATTACK(ATTACKER):
             with torch.no_grad():
                 trigger_s = self.trigger[s]
                 tanh_trigger_s = self._tanh_func(trigger_s)
-                trigger_input = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=0.5)
+                trigger_input  = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=0.5)
                 if self.databuilder.trainset.use_transform:
                     trigger_input = self.normalizer(trigger_input)
             
             for _ in range(self.config['attack']['imc']['NEURON_EPOCH']):
-                trigger_feat_s = self.model.module.partial_forward(trigger_input.to(self.device))
+                trigger_feat_s = self.model.partial_forward(trigger_input.to(self.device))
                 trigger_feat_s = trigger_feat_s[:, neuron_idx].abs()
                 if trigger_feat_s.dim() > 2:
                     trigger_feat_s = trigger_feat_s.flatten(2).sum(2)
@@ -786,11 +789,11 @@ class IMCATTACK(ATTACKER):
     def _get_enuron_idx(self) -> torch.tensor:
         
         if 'resnet' in self.argsnetwork:
-            weight = self.model.module.linear.weight.abs()
+            weight = self.model.linear.weight.abs()
         elif 'vgg' in self.argsnetwork:
-            weight = self.model.module.classifier.weight.abs()
+            weight = self.model.classifier.weight.abs()
         elif 'densenet' in self.argsnetwork:
-            weight = self.model.module.linear.weight.abs()
+            weight = self.model.linear.weight.abs()
         else:
             raise NotImplementedError
             

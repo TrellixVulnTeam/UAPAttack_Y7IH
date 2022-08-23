@@ -62,7 +62,7 @@ class TRAINER():
 
     def _orig_train(self) -> None:
         
-        if self.config['train']['device'] == 0:
+        if self.config['train']['device'] == 0 or (not self.config['train']['DISTRIBUTED']):
             self.timestamp = datetime.today().strftime('%y%m%d%H%M%S')
             self.logger = SummaryWriter(log_dir=self.config['args']['logdir'], 
                                         comment=self.argsdataset+'_'+self.argsnetwork+'_'+self.argsmethod+'_orig_'+self.timestamp, 
@@ -127,9 +127,12 @@ class TRAINER():
                 self.metric_history[k].update(test_result[k], 0, epoch)
             
             if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
+                if self.config['train']['DISTRIBUTED']:
+                    self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
+                else:
+                    self.best_model = {k:v.cpu() for k, v in self.model.state_dict().items()}
     
-            if self.config['train']['device'] == 0:
+            if self.config['train']['device'] == 0 or (not self.config['train']['DISTRIBUTED']):
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
                     'train': self.metric_history['train_ce_loss'].val, 
@@ -167,10 +170,11 @@ class TRAINER():
     
     def _adv_train(self) -> None:
         
-        self.timestamp = datetime.today().strftime('%y%m%d%H%M%S')
-        self.logger = SummaryWriter(log_dir=self.config['args']['logdir'], 
-                            comment=self.config['args']['dataset']+'_'+self.config['args']['network']+'_'+self.config['args']['method']+'_adv_'+self.timestamp, 
-                            flush_secs=30) 
+        if self.config['train']['device'] == 0 or (not self.config['train']['DISTRIBUTED']):
+            self.timestamp = datetime.today().strftime('%y%m%d%H%M%S')
+            self.logger = SummaryWriter(log_dir=self.config['args']['logdir'], 
+                                comment=self.config['args']['dataset']+'_'+self.config['args']['network']+'_'+self.config['args']['method']+'_adv_'+self.timestamp, 
+                                flush_secs=30) 
         
         optimizer = torch.optim.SGD(self.model.parameters(), 
                                     lr=float(self.config['train']['LR']), 
@@ -245,7 +249,7 @@ class TRAINER():
                 
             scheduler.step()
             
-            if self.config['train']['device'] == 0:
+            if self.config['train']['device'] == 0 or (not self.config['train']['DISTRIBUTED']):
                 
                 test_result = self.eval(self.validloader)
                 for k in test_result:

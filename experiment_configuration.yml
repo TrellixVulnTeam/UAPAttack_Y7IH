@@ -21,7 +21,7 @@ train:
   MOMENTUM:       !!float 0.9
   USE_TRANSFORM:  !!bool false
   USE_CLIP:       !!bool false
-  DISTRIBUTED:    !!bool true
+  DISTRIBUTED:    !!bool false
 
   cifar10:
     N_EPOCHS:     !!int 200
@@ -90,7 +90,7 @@ attack:
     LABEL_CLEAN:   !!bool true    # true to use clean-label attack version
 
 adversarial:
-  ADV_TRAIN:    !!bool true      # use adversarial training
+  ADV_TRAIN:    !!bool false      # use adversarial training
   EPS:          !!float 1         # step size
   RADIUS:       !!float 1         # defense radius
   OPTIM_EPOCHS: !!int 1

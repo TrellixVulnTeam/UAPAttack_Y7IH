@@ -28,7 +28,7 @@ def run_attack(config: Dict) -> Dict:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     
-    if config['train']['DISTRIBUTED']:
+    if config['train']['DISTRIBUTED'] and ('LOCAL_RANK' in os.environ):
         local_rank = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local_rank)
         torch.distributed.init_process_group(backend=config['train'][config['args']['dataset']]['BACKEND'])
@@ -71,11 +71,11 @@ def run_attack(config: Dict) -> Dict:
     trainer = TRAINER(model=model.model, attacker=attacker, config=config)
     trainer.train(trainloader=dataset.trainloader, validloader=dataset.testloader)
     
-    if config['train']['DISTRIBUTED'] and local_rank==0:
+    if (config['train']['DISTRIBUTED'] and local_rank==0) or (not config['train']['DISTRIBUTED']):
         
         attacker.save_trigger(config['attack']['TRIGGER_SAVE_DIR'])
         
-        result_dict = trainer.eval(evalloader=dataset.testloader, load_checkpoint=True)
+        result_dict = trainer.eval(evalloader=dataset.testloader, use_best=True)
         result_dict = {k:v for k, v in result_dict.items()}
         result_dict.update({k:[v for _, v in v.val_record.items()] for k, v in trainer.metric_history.items()})
         result_dict['model'] = model.model.cpu().state_dict()
@@ -110,7 +110,7 @@ if __name__ == '__main__':
     if result_dict:
         # save result
         if not os.path.exists(args.savedir):
-            os.makedirs(args.savedir)
+            os.makedirs(args.savedir, exist_ok=True)
             
         timestamp = datetime.today().strftime("%y%m%d%H%M%S")
         result_file = f"{args.method}_{args.dataset}_{args.network}_{timestamp}.pkl"
