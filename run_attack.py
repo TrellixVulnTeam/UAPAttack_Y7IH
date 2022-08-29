@@ -59,7 +59,7 @@ def run_attack(config: Dict) -> Dict:
     elif config['args']['method'] == 'uap':
         attacker = UAPATTACK(dataset=dataset.trainset, config=config)
     elif config['args']['method'] == 'ulp':
-        attacker = ULPATTACK(dataset=dataset.trainset, config=config)
+        attacker = ULPATTACK(databuilder=dataset, config=config)
     else:
         raise NotImplementedError
     print(">>> Inject Trojan")
@@ -85,11 +85,11 @@ def run_attack(config: Dict) -> Dict:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method',  type=str, default='warp',     choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap', 'ulp'})
+    parser.add_argument('--method',  type=str, default='ulp',     choices={'badnet', 'sig', 'ref', 'warp', 'imc', 'uap', 'ulp'})
     parser.add_argument('--dataset', type=str, default='cifar10',  choices={'cifar10', 'gtsrb', 'imagenet'})
     parser.add_argument('--network', type=str, default='resnet18', choices={'resnet18', 'vgg16', 'densenet121'})
     
-    parser.add_argument('--gpus', type=str, default='4')
+    parser.add_argument('--gpus', type=str, default='7')
     parser.add_argument('--savedir', type=str, default='/scr/songzhu/trojai/uapattack/result', help='dir to save trojaned models')
     # parser.add_argument('--savedir', type=str, default='/data/songzhu/uapattack/result', help='dir to save trojaned models')
     parser.add_argument('--logdir',  type=str, default='./log', help='dir to save log file')

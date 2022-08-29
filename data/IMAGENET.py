@@ -5,13 +5,14 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Iterator, Optional, Tuple
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as VF
 from torchvision.datasets.folder import ImageFolder
 from torchvision.datasets.utils import check_integrity, extract_archive, verify_str_arg
 import numpy as np
 from PIL import Image
+import h5py
 
 ARCHIVE_META = {
     "train": ("ILSVRC2012_img_train.tar", "1d675b47d978889d74fa0da5fadfb00e"),
@@ -142,7 +143,25 @@ class ImageNet(ImageFolder):
     def extra_repr(self) -> str:
         return "Split: {split}".format(**self.__dict__)
 
+    # my adds-on method
+    def save_selected_images(self, save_dir: str, **kwargs) -> None:
+        
+        hf = h5py.File(os.path.join(save_dir, f'imagenet-10class-{self.split}'), 'w')
+        
+        for index in range(len(self.data)):
+            
+            group_index = hf.create_group(f'{index}')
+            
+            pth, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
+            img = np.array(self.loader(pth[0]))
+            
+            group_index.create_dataset(f'data_{index}', data=img)
+            group_index.create_dataset(f'labels_c_{index}', data=labels_c)
+            group_index.create_dataset(f'labels_t_{index}', data=labels_t)
+            
+            print(f"Progress: {index/len(self.data)*100:.3f}%", end='\r')
 
+        hf.close()
 
 def load_meta_file(root: str, file: Optional[str] = None) -> Tuple[Dict[str, str], List[str]]:
     if file is None:
@@ -283,8 +302,97 @@ def parse_val_archive(
     for wnid, img_file in zip(wnids, images):
         shutil.move(img_file, os.path.join(val_root, wnid, os.path.basename(img_file)))
         
+
+class ImagenetDownSample(Dataset):
+    
+    def __init__(self, 
+                 root:str, 
+                 split:str='train', 
+                 transform:transforms = None,
+                 target_transform: transforms = None, 
+                 **kwargs):
         
+        self.split = split
+        self.root  = root
+        self.transform = transform
+        self.target_transform = target_transform
+        self.img_size = int(kwargs['config']['dataset']['imagenet']['IMG_SIZE'])
+        
+        self.data = []
+        self.labels_c = []
+        self.labels_t = []
+        
+        self.hf = h5py.File(os.path.join(root, f'imagenet-10class-{self.split}'), 'r')
+        # for index in self.hf:
+        #     self.data.append(Image.fromarray(np.array(self.hf.get(f'{index}/data_{index}'))))
+        #     self.labels_c.append(int(np.array(self.hf.get(f'{index}/labels_c_{index}'))))
+        #     self.labels_t.append(int(np.array(self.hf.get(f'{index}/labels_t_{index}'))))
+        
+        self.labels_c = np.array(self.labels_c)
+        self.labels_t = np.array(self.labels_t)
+            
+        self.clean_num = len(self.hf)
+
+        self.troj_data = []
+        self.troj_labels_c = np.array([])
+        self.troj_labels_t = np.array([])
+        
+        self.use_transform = True
+    
+    def __len__(self) -> int:
+        return len(self.hf)+len(self.troj_data)
+    
+    def __getitem__(self, index: int) -> Tuple[Any, Any, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        
+        if index < self.clean_num:
+            # img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
+            img = Image.fromarray(np.array(self.hf.get(f'{index}/data_{index}')))
+            labels_c = int(np.array(self.hf.get(f'{index}/labels_c_{index}')))
+            labels_t = int(np.array(self.hf.get(f'{index}/labels_t_{index}')))
+        else:
+            img, labels_c, labels_t = self.troj_data[index-self.clean_num], self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
+        
+        if self.use_transform and self.transform is not None:
+            img = self.transform(img)
+        else:
+            img = VF.resize(VF.to_tensor(img), (self.img_size, self.img_size))
+            
+        if self.target_transform is not None:
+            labels_c = self.target_transform(labels_c)
+            labels_t = self.target_transform(labels_t)
+        else:
+            labels_c = torch.tensor(labels_c)
+            labels_t = torch.tensor(labels_t)
+
+        return index, img, labels_c, labels_t
+    
+
+    def insert_data(self, new_data: List, new_labels_c: np.ndarray, new_labels_t: np.ndarray) -> None:
+        assert isinstance(new_data, List), "data need to be a list, but find " + str(type(new_data)) 
+        assert isinstance(new_labels_c, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_c))
+        assert isinstance(new_labels_t, np.ndarray), f"labels need to be a np.ndarray, but find " + str(type(new_labels_t))
+        self.troj_data += new_data
+        self.troj_labels_c = np.append(self.troj_labels_c, new_labels_c).astype(np.long)
+        self.troj_labels_t = np.append(self.troj_labels_t, new_labels_t).astype(np.long)
+    
+        
+    def select_data(self, indices: np.ndarray) -> None:
+        assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
+        self.data = [self.data[i] for i in indices]
+        self.labels_c = np.array(self.labels_c)[indices]
+        self.labels_t = np.array(self.labels_t)[indices]
+
+
 if __name__ == '__main__':
+    
+    import yaml
     
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -299,15 +407,31 @@ if __name__ == '__main__':
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=train_transform)
+    # trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=train_transform)
+    # train_loader = DataLoader(trainset, shuffle=True, batch_size=32)
+    
+    # temp = enumerate(train_loader)
+    # _, (ind, images, labels, _) = temp.__next__()
+    
+    
+    # testset = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=test_transform)
+    # test_loader = DataLoader(trainset, shuffle=True, batch_size=32)
+    
+    # temp = enumerate(test_loader)
+    # _, (ind, images, labels, _) = temp.__next__()
+    
+    # trainset.save_selected_images('/scr/songzhu/imagenet10class')
+    # testset.save_selected_images('/scr/songzhu/imagenet10class')
+    
+    with open('../experiment_configuration.yml') as f:
+        config = yaml.safe_load(f)
+    f.close()
+    
+    trainset = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='train', transform=train_transform, config=config)
+    testset  = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='val', transform=test_transform, config=config)
+    
     train_loader = DataLoader(trainset, shuffle=True, batch_size=32)
     
     temp = enumerate(train_loader)
-    _, (ind, images, labels) = temp.__next__()
     
-    
-    testset = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=test_transform)
-    test_loader = DataLoader(trainset, shuffle=True, batch_size=32)
-    
-    temp = enumerate(test_loader)
-    _, (ind, images, labels) = temp.__next__()
+    _, (ind, images, labels, _) = temp.__next__()

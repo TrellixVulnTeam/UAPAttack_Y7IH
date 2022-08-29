@@ -13,8 +13,8 @@ class TRAINER():
 
     def __init__(self, 
                  model: torch.nn.Module, 
-                 attacker: ATTACKER, 
                  config: Dict, 
+                 attacker: ATTACKER = None, 
                  **kwargs) -> None:
         
         self.model = model
@@ -83,7 +83,7 @@ class TRAINER():
             for k in self.metric_history:
                 self.metric_history[k].reset()
             
-            if self.attacker.dynamic:
+            if self.attacker and self.attacker.dynamic:
                 self.attacker.reset_trojcount()
             
             if self.config['train']['DISTRIBUTED']:
@@ -92,7 +92,7 @@ class TRAINER():
             self.model.train()
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
-                if self.attacker.dynamic:
+                if self.attacker and self.attacker.dynamic:
                     images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
@@ -310,7 +310,7 @@ class TRAINER():
         self.model.eval()
         for b, (_, images, labels_c, labels_t) in enumerate(evalloader):
             
-            if self.attacker.dynamic: 
+            if self.attacker and self.attacker.dynamic: 
                 self.attacker.reset_trojcount()
                 
                 iamges_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, mode='test')

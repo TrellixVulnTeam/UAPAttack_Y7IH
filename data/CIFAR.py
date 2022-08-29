@@ -285,12 +285,15 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['cifar10']['N_EPOCHS'] = 200
+    config['train']['cifar10']['N_EPOCHS'] = 40
+    config['train']['DISTRIBUTED'] = False
     config['args'] = defaultdict()
     config['args']['dataset'] = 'cifar10'
-    config['args']['network'] = 'densenet121'
+    config['args']['network'] = 'resnet18'
     config['args']['method'] = 'clean'
+    config['args']['savedir'] = '/scr/songzhu/trojai/uapattack/result'
     config['args']['logdir'] = './log'
+    config['args']['seed'] = 123
     
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -310,9 +313,9 @@ if __name__ == '__main__':
     testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
 
     # For resnet18
-    # model = ResNet18(num_classes=10).to(device)
+    model = ResNet18(num_classes=10).to(device)
     # model = VGG16(num_classes=10).to(device)
-    model = DenseNet121(num_classes=10).to(device)
+    # model = DenseNet121(num_classes=10).to(device)
 
     model_trainer = TRAINER(model=model, config=config)
     model_trainer.train(trainloader, testloader)

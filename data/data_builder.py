@@ -5,7 +5,7 @@ from torchvision import transforms
 
 from .CIFAR import CIFAR10
 from .GTSRB import GTSRB
-from .IMAGENET import ImageNet
+from .IMAGENET import ImagenetDownSample
 
 class DATA_BUILDER():
 
@@ -87,8 +87,8 @@ class DATA_BUILDER():
             if not self.config['train']['USE_TRANSFORM']:
                 transform_train = transform_test
             
-            self.trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=transform_train)
-            self.testset  = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=transform_test)
+            self.trainset = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='train', transform=transform_train, config=self.config)
+            self.testset  = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='val', transform=transform_test, config=self.config)
         
         else:
             raise NotImplementedError

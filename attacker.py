@@ -639,7 +639,7 @@ class IMCATTACK(ATTACKER):
 
         self.model = model.module if config['train']['DISTRIBUTED'] else model
             
-        for module in model.module.children():
+        for module in model.children():
             if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
                 module.reset_parameters()
             
@@ -836,21 +836,32 @@ class IMCATTACK(ATTACKER):
 class UAPATTACK(ATTACKER):
     
     def __init__(self, 
-                 dataset: torch.utils.data.Dataset, 
+                 databuilder: DATA_BUILDER, 
                  **kwargs) -> None:
         super().__init__(**kwargs)
+        
+        if not self.config['attack']['ulp']['DYNAMIC']:
+            # non-adaptive ulp always start from a pretrained model
+            self.config['network']['PRETRAINED'] = True
         
         models = NETWORK_BUILDER(config=self.config)
         models.build_network()
         
         # f_star
         self.model = models.model.module if self.config['train']['DISTRIBUTED'] else models.model
-        self.dataset = dataset
+        self.dataset = databuilder.trainset
+        
+        self.normalizer = transforms.Normalize(
+            mean = databuilder.mean, 
+            std  = databuilder.std
+        )
         
         # reset model to guarantee different initialization to avoid cheating
-        for module in self.model.children():
-            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
-                module.reset_parameters()
+        if self.config['attack']['ulp']['DYNAMIC']:
+            for model in self.model_list:
+                for module in model.children():
+                    if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                        module.reset_parameters()
 
 
     def _add_trigger(self, 
@@ -968,24 +979,38 @@ class UAPATTACK(ATTACKER):
 class ULPATTACK(ATTACKER):
     
     def __init__(self, 
-                 dataset: torch.utils.data.Dataset, 
+                 databuilder: DATA_BUILDER, 
                  **kwargs) -> None:
         super().__init__(**kwargs)
+        
+        if not self.config['attack']['ulp']['DYNAMIC']:
+            # non-adaptive ulp always start from a pretrained model
+            self.config['network']['PRETRAINED'] = True
         
         self.model_list = []
         for i in range(self.config['attack']['ulp']['NUM_MODELS']):
             models = NETWORK_BUILDER(config=self.config)
             models.build_network()
             model = models.model.module if self.config['train']['DISTRIBUTED'] else models.model
+            if self.config['attack']['ulp']['DYNAMIC']:
+                model.train()
+            else:
+                model.eval()
             self.model_list.append(model)
-    
-        self.dataset = dataset
+            
+        self.dataset = databuilder.trainset
+        
+        self.normalizer = transforms.Normalize(
+            mean = databuilder.mean, 
+            std = databuilder.std
+        )
         
         # reset model to guarantee different initialization to avoid cheating
-        for model in self.model_list:
-            for module in model.children():
-                if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
-                    module.reset_parameters()
+        if self.config['attack']['ulp']['DYNAMIC']:
+            for model in self.model_list:
+                for module in model.children():
+                    if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                        module.reset_parameters()
         
         
     def _add_trigger(self, 
@@ -996,17 +1021,8 @@ class ULPATTACK(ATTACKER):
     
     
     def _generate_trigger(self) -> np.ndarray:
-        if self.config['attack']['ulp']['DYNAMIC'] == True:
-            trigger = self._generate_ulp_dynamic()
-        else:
-            trigger = self._generate_ulp_static()
-        return trigger
-    
-    
-    def _generate_ulp_static(self) -> np.ndarray:
         
         device = self.config['train']['device']
-            
         self.ulp_dataset = deepcopy(self.dataset)
         
         if self.config['attack']['ulp']['LABEL_CLEAN']:
@@ -1017,9 +1033,9 @@ class ULPATTACK(ATTACKER):
             self.target_source_pair = new_source_target_pair
         
         # choose data to inject trojan
-        select_indices = []
+        select_indices = [i for i in range(len(self.ulp_dataset.labels_c))]
         target_indices = [i for i in range(len(self.ulp_dataset.labels_c)) if int(self.ulp_dataset.labels_c[i]) in self.target_source_pair]
-        select_indices = np.random.choice(target_indices, size=int(self.config['attack']['TROJ_FRACTION']*len(target_indices)), replace=False)
+        select_indices = np.random.choice(target_indices, size=int(0.1*len(target_indices)), replace=False)
         
         c = self.config['dataset'][self.argsdataset]['NUM_CHANNELS']
         w, h = self.config['dataset'][self.argsdataset]['IMG_SIZE'], self.config['dataset'][self.argsdataset]['IMG_SIZE']
@@ -1033,9 +1049,8 @@ class ULPATTACK(ATTACKER):
             ], requires_grad=True)
         
         # self.ulp_dataset.select_data(np.array(select_indices))    
-        # adjust batch_size for free-m adversarial training
         batch_size  = self.config['train'][self.argsdataset]['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
-        dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*batch_size, shuffle=True)
+        dataloader  = torch.utils.data.DataLoader(self.ulp_dataset, batch_size=len(self.model_list)*int(self.config['attack']['ulp']['N_ULP'])*batch_size, shuffle=True)
         
         if not self.config['network']['PRETRAINED']:
             optimizer = torch.optim.SGD([{'params': model.parameters()} for model in self.model_list], 
@@ -1056,49 +1071,73 @@ class ULPATTACK(ATTACKER):
             
             for b, (indices, images, labels_c, labels_t) in enumerate(dataloader):
                 
-                batch_size_b = len(images)//len(self.model_list)
+                images_perturb = []
+                labels_clean = []
+                labels_troj  = []
                 
                 for k in self.ulp:
                     troj_indices = [i for i in range(len(indices)) if indices[i].numpy() in np.intersect1d(indices[torch.where(labels_c == k)], select_indices)]
                     if len(troj_indices)!=0:
                         # add each ULP to each images
-                        images[troj_indices]   = (torch.clamp(0.5*images[troj_indices][:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w)
-                        labels_t[troj_indices] =  int(self.target_source_pair[k])
+                        images_perturb.append((torch.clamp(0.5*images[troj_indices][:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w))
+                        labels_troj.append(torch.tensor(len(troj_indices)*len(self.ulp[k])*[int(self.target_source_pair[k])]))
+                        labels_clean.append(torch.tensor(len(troj_indices)*len(self.ulp[k])*[k]))
+                        
+                if len(images_perturb):
+                    images_perturb = torch.cat([images, torch.cat(images_perturb, 0)], 0)
+                    images_perturb = self.normalizer(images_perturb)
+                    labels_troj    = torch.cat([torch.tensor(labels_c), torch.cat(labels_troj)])
+                    labels_clean   = torch.cat([torch.tensor(labels_c), torch.cat(labels_clean)])
+                else:
+                    images_perturb = self.normalizer(images)
+                    labels_troj  = labels_c
+                    labels_clean = labels_c 
+                
+                batch_size_b = len(images_perturb)//len(self.model_list)//int(self.config['attack']['ulp']['N_ULP'])
                 
                 loss = 0
                 # GPU memory saving purpose
                 for i in range(len(self.model_list)):
                     
                     model_i = self.model_list[i].to(device)
-                    if self.config['network']['PRETRAINED']:
-                        model_i.eval()
-                    else:
-                        model_i.train()
-                    
-                    images_k_perturb_i = images[(i*batch_size_b):(min((i+1)*batch_size_b, len(images)))].to(device)
-                    labels_t_i = labels_t[(i*batch_size_b):(min((i+1)*batch_size_b, len(labels_t)))].to(device)
-                    
-                    outputs = model_i(images_k_perturb_i)
-                    loss += criterion_ce(outputs, labels_t_i)
-                    
-                    _, pred = outputs.max(1)
-                    n_fooled += pred.eq(labels_t_i).sum().item()
+                        
+                    for j in range(int(self.config['attack']['ulp']['N_ULP'])):
+                        
+                        ind = i*int(self.config['attack']['ulp']['N_ULP']) + j
+                        
+                        images_perturb_ij = images_perturb[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(images_perturb)))].to(device)
+                        labels_t_ij = labels_troj[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_troj)))].to(device)
+                        
+                        outputs = model_i(images_perturb_ij)
+                        loss += criterion_ce(outputs, labels_t_ij)
+                        
+                        labels_c_ij = labels_clean[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_troj)))].to(device)
+                        _, pred = outputs.max(1)
+                        
+                        if not self.config['attack']['ulp']['LABEL_CLEAN']:
+                            ind = torch.where(labels_t_ij != labels_c_ij)
+                            if len(ind[0]):
+                                n_fooled += pred[ind].eq(labels_t_ij[ind]).sum().item()
+                            n_total  += len(ind[0])
+                        else:
+                            n_fooled += pred.eq(labels_t_ij).sum().item()
+                            n_total  += len(labels_t_ij)
                 
                 # gradient cumulate
-                (loss/len(self.model_list)/2).backward()
+                (loss/len(self.model_list)).backward()
                 if b%2:
                     # ulp step
                     if self.ulp[k].grad is not None:
                         delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
-                        self.ulp[k] -= (self.config['attack']['TRIGGER_SIZE']/(torch.norm(delta_ulp, p=2)+1))*delta_ulp/self.config['attack']['ulp']['OPTIM_EPOCHS']
+                        self.ulp[k] -= 0.1*delta_ulp
                         self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
                         self.ulp[k].requires_grad = True
-                
                     
-                if not self.config['network']['PRETRAINED'] and b%2:
+                if (not self.config['network']['PRETRAINED']) and (b%2):
+                    for i in range(len(self.model_list)):
+                        torch.nn.utils.clip_grad_norm_(self.model_list[i].parameters(), 3)
                     optimizer.step()
-                    
-                n_total  += len(labels_t)
+                    optimizer.zero_grad()
                     
             # import matplotlib.pyplot as plt
             # fig = plt.figure(figsize=(15, 5))
