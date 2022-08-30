@@ -19,8 +19,8 @@ train:
   LR:             !!float 0.007
   WEIGHT_DECAY:   !!float 0.0005
   MOMENTUM:       !!float 0.9
-  USE_TRANSFORM:  !!bool true
-  USE_CLIP:       !!bool true
+  USE_TRANSFORM:  !!bool false
+  USE_CLIP:       !!bool false
   DISTRIBUTED:    !!bool false
 
   cifar10:
@@ -39,7 +39,7 @@ train:
     BACKEND:      !!str 'nccl'
   imagenet:
     N_EPOCHS:     !!int 80
-    BATCH_SIZE:   !!int 32
+    BATCH_SIZE:   !!int 16
     MILE_STONE:   !!seq [20, 40, 60]
     T_MAX:        !!int 80
     GAMMA:        !!float 0.1

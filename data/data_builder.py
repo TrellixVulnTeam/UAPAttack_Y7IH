@@ -72,14 +72,14 @@ class DATA_BUILDER():
             self.std  = (0.229, 0.224, 0.225)
             
             transform_train = transforms.Compose([
-                transforms.RandomResizedCrop(224),
+                transforms.RandomResizedCrop(self.config['dataset']['imagenet']['IMG_SIZE']),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ])
             transform_test = transforms.Compose([
                 transforms.Resize(256),
-                transforms.CenterCrop(224),
+                transforms.CenterCrop(self.config['dataset']['imagenet']['IMG_SIZE']),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])

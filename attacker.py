@@ -222,15 +222,18 @@ class SIGATTACK(ATTACKER):
 class REFLECTATTACK(ATTACKER):
     
     def __init__(self, 
-                 dataset: torch.utils.data.Dataset, 
                  config: Dict, 
                  **kwargs) -> None:
         super().__init__(config)
         
-        valid_ind = np.random.choice(range(len(dataset)), int(0.1*len(dataset)), replace=False)
-        self.trainset = deepcopy(dataset)
+        # splitting a valid set from training set for trigger searching
+        self.trainset, self.validset = DATA_BUILDER(config), DATA_BUILDER(config)
+        self.trainset.build_dataset()
+        self.trainset = self.trainset.trainset
+        valid_ind = np.random.choice(range(len(self.trainset)), int(0.1*len(self.trainset)), replace=False)
         self.trainset.select_data(np.setdiff1d(np.array(range(len(self.trainset))), valid_ind).flatten())
-        self.validset = deepcopy(dataset)
+        self.validset.build_dataset()
+        self.validset = self.validset.trainset
         self.validset.select_data(valid_ind)
         
         self.sigma = 1.5
@@ -573,7 +576,7 @@ class WANETATTACK(ATTACKER):
         labels_clean  = []
         labels_inject = []
         
-        img = self.denormalizer(imgs)
+        imgs = self.denormalizer(VF.resize(imgs, (self.img_h, self.img_h)))
         
         for s in self.target_source_pair: 
             
@@ -1153,3 +1156,5 @@ class ULPATTACK(ATTACKER):
             foolrate = n_fooled/(n_total+1)
             print(f"[{iters:2d}|{self.config['attack']['ulp']['OPTIM_EPOCHS']:2d}] - Fooling Rate {foolrate:.3f} - {torch.norm(self.ulp[k], p=2):.3f}")
         self.trigger = self.ulp
+        
+        

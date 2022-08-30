@@ -330,8 +330,10 @@ class ImagenetDownSample(Dataset):
         
         self.labels_c = np.array(self.labels_c)
         self.labels_t = np.array(self.labels_t)
-            
-        self.clean_num = len(self.hf)
+        self.indices  = list(range(len(self.hf)))
+        self.active_indices = list(range(len(self.hf)))
+        
+        self.clean_num = len(self.active_indices)
 
         self.troj_data = []
         self.troj_labels_c = np.array([])
@@ -340,7 +342,7 @@ class ImagenetDownSample(Dataset):
         self.use_transform = True
     
     def __len__(self) -> int:
-        return len(self.hf)+len(self.troj_data)
+        return len(self.active_indices)+len(self.troj_data)
     
     def __getitem__(self, index: int) -> Tuple[Any, Any, Any]:
         """
@@ -351,11 +353,13 @@ class ImagenetDownSample(Dataset):
             tuple: (sample, target) where target is class_index of the target class.
         """
         
+        activeindexindex = self.active_indices[index]
+        
         if index < self.clean_num:
             # img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
-            img = Image.fromarray(np.array(self.hf.get(f'{index}/data_{index}')))
-            labels_c = int(np.array(self.hf.get(f'{index}/labels_c_{index}')))
-            labels_t = int(np.array(self.hf.get(f'{index}/labels_t_{index}')))
+            img = Image.fromarray(np.array(self.hf.get(f'{activeindexindex}/data_{activeindexindex}')))
+            labels_c = int(np.array(self.hf.get(f'{activeindexindex}/labels_c_{activeindexindex}')))
+            labels_t = int(np.array(self.hf.get(f'{activeindexindex}/labels_t_{activeindexindex}')))
         else:
             img, labels_c, labels_t = self.troj_data[index-self.clean_num], self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
         
@@ -385,10 +389,8 @@ class ImagenetDownSample(Dataset):
         
     def select_data(self, indices: np.ndarray) -> None:
         assert isinstance(indices, np.ndarray), "indices need to be np.ndarray, but find " + str(type(indices))
-        self.data = [self.data[i] for i in indices]
-        self.labels_c = np.array(self.labels_c)[indices]
-        self.labels_t = np.array(self.labels_t)[indices]
-
+        self.active_indices = [self.indices[i] for i in indices]
+        self.clean_num = len(self.active_indices)
 
 if __name__ == '__main__':
     

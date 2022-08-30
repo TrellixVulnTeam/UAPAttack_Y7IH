@@ -51,7 +51,7 @@ def run_attack(config: Dict) -> Dict:
     elif config['args']['method'] == 'sig':
         attacker = SIGATTACK(config=config)
     elif config['args']['method'] == 'ref':
-        attacker = REFLECTATTACK(dataset=dataset.trainset, config=config)
+        attacker = REFLECTATTACK(config=config)
     elif config['args']['method'] == 'warp':
         attacker = WANETATTACK(databuilder=dataset, config=config)
     elif config['args']['method'] == 'imc':
