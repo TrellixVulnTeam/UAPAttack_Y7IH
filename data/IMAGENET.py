@@ -318,15 +318,9 @@ class ImagenetDownSample(Dataset):
         self.target_transform = target_transform
         self.img_size = int(kwargs['config']['dataset']['imagenet']['IMG_SIZE'])
         
-        self.data = []
-        self.labels_c = []
-        self.labels_t = []
-        
         self.hf = h5py.File(os.path.join(root, f'imagenet-10class-{self.split}'), 'r')
-        # for index in self.hf:
-        #     self.data.append(Image.fromarray(np.array(self.hf.get(f'{index}/data_{index}'))))
-        #     self.labels_c.append(int(np.array(self.hf.get(f'{index}/labels_c_{index}'))))
-        #     self.labels_t.append(int(np.array(self.hf.get(f'{index}/labels_t_{index}'))))
+        self.labels_c = [int(np.array(self.hf.get(f'{index}/labels_c_{index}'))) for index in range(len(self.hf))]
+        self.labels_t = [int(np.array(self.hf.get(f'{index}/labels_t_{index}'))) for index in range(len(self.hf))]
         
         self.labels_c = np.array(self.labels_c)
         self.labels_t = np.array(self.labels_t)
@@ -353,13 +347,11 @@ class ImagenetDownSample(Dataset):
             tuple: (sample, target) where target is class_index of the target class.
         """
         
-        activeindexindex = self.active_indices[index]
-        
         if index < self.clean_num:
+            activeindex = self.active_indices[index]
             # img, labels_c, labels_t = self.data[index], self.labels_c[index], self.labels_t[index]
-            img = Image.fromarray(np.array(self.hf.get(f'{activeindexindex}/data_{activeindexindex}')))
-            labels_c = int(np.array(self.hf.get(f'{activeindexindex}/labels_c_{activeindexindex}')))
-            labels_t = int(np.array(self.hf.get(f'{activeindexindex}/labels_t_{activeindexindex}')))
+            img = Image.fromarray(np.array(self.hf.get(f'{activeindex}/data_{activeindex}')))
+            labels_c, labels_t = self.labels_c[activeindex], self.labels_t[activeindex]
         else:
             img, labels_c, labels_t = self.troj_data[index-self.clean_num], self.troj_labels_c[index-self.clean_num], self.troj_labels_t[index-self.clean_num]
         
@@ -375,6 +367,7 @@ class ImagenetDownSample(Dataset):
             labels_c = torch.tensor(labels_c)
             labels_t = torch.tensor(labels_t)
 
+        index = activeindex if index < self.clean_num else index
         return index, img, labels_c, labels_t
     
 
@@ -394,7 +387,41 @@ class ImagenetDownSample(Dataset):
 
 if __name__ == '__main__':
     
+    from collections import defaultdict
+    import random 
+    
     import yaml
+    import numpy as np
+    from datetime import datetime
+    import pickle as pkl
+    
+    from trainer import TRAINER
+    from networks import DenseNet121, ResNet18, VGG16
+
+    seed = 123
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    with open('experiment_configuration.yml', 'r') as f:
+        config = yaml.safe_load(f)
+    f.close()
+    config['train']['device'] = device
+    config['train']['imagenet']['N_EPOCHS'] = 40
+    config['train']['DISTRIBUTED'] = False
+    config['args'] = defaultdict()
+    config['args']['dataset'] = 'cifar10'
+    config['args']['network'] = 'resnet18'
+    config['args']['method'] = 'clean'
+    config['args']['savedir'] = '/scr/songzhu/trojai/uapattack/result'
+    config['args']['logdir'] = './log'
+    config['args']['seed'] = 123
     
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -409,31 +436,25 @@ if __name__ == '__main__':
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    # trainset = ImageNet(root='/scr/songzhu/imagenet', split='train', transform=train_transform)
-    # train_loader = DataLoader(trainset, shuffle=True, batch_size=32)
-    
-    # temp = enumerate(train_loader)
-    # _, (ind, images, labels, _) = temp.__next__()
-    
-    
-    # testset = ImageNet(root='/scr/songzhu/imagenet', split='val', transform=test_transform)
-    # test_loader = DataLoader(trainset, shuffle=True, batch_size=32)
-    
-    # temp = enumerate(test_loader)
-    # _, (ind, images, labels, _) = temp.__next__()
-    
-    # trainset.save_selected_images('/scr/songzhu/imagenet10class')
-    # testset.save_selected_images('/scr/songzhu/imagenet10class')
-    
-    with open('../experiment_configuration.yml') as f:
-        config = yaml.safe_load(f)
-    f.close()
-    
     trainset = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='train', transform=train_transform, config=config)
     testset  = ImagenetDownSample(root='/scr/songzhu/imagenet10class', split='val', transform=test_transform, config=config)
-    
-    train_loader = DataLoader(trainset, shuffle=True, batch_size=32)
-    
-    temp = enumerate(train_loader)
-    
-    _, (ind, images, labels, _) = temp.__next__()
+    trainloader = DataLoader(trainset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
+    testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
+
+    # For resnet18
+    model = ResNet18(num_classes=10).to(device)
+    # model = VGG16(num_classes=10).to(device)
+    # model = DenseNet121(num_classes=10).to(device)
+
+    model_trainer = TRAINER(model=model, config=config)
+    model_trainer.train(trainloader, testloader)
+
+    result_dict = model_trainer.eval(testloader)
+    result_dict['model_state_dict'] = model_trainer.model.state_dict()
+    result_dict['config'] = config
+
+    time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
+    result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_{time_stamp}.pkl"
+    with open(result_file, 'wb') as f:
+        pkl.dump(result_dict, f)
+    f.close()

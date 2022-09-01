@@ -30,6 +30,7 @@ class DATA_BUILDER():
             ])
 
             transform_test = transforms.Compose([
+                transforms.Resize((32, 32)), 
                 transforms.ToTensor(),
                 transforms.Normalize(self.mean, self.std),
             ])

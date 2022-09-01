@@ -173,6 +173,9 @@ class CIFAR10(data.Dataset):
         self.data = [self.data[i] for i in indices]
         self.labels_c = self.labels_c[indices]
         self.labels_t = self.labels_t[indices]
+        
+    def get_data_class(self, c: int, size: int) -> torch.Tensor:
+        return torch.cat([self.data[i][None, :, :, :] for i in range(len(self.data)) if self.labels_c[i]==c])
 
     def _load_meta(self):
         path = os.path.join(self.root, self.base_folder, self.meta['filename'])

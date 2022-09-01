@@ -59,7 +59,7 @@ def run_attack(config: Dict) -> Dict:
     elif config['args']['method'] == 'uap':
         attacker = UAPATTACK(dataset=dataset.trainset, config=config)
     elif config['args']['method'] == 'ulp':
-        attacker = ULPATTACK(databuilder=dataset, config=config)
+        attacker = ULPATTACK(config=config)
     else:
         raise NotImplementedError
     print(">>> Inject Trojan")

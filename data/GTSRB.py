@@ -172,6 +172,9 @@ class GTSRB(VisionDataset):
         
     def select_data(self, indices: np.ndarray) -> None:
         self._samples = [self._samples[i] for i in indices]
+        
+    def get_data_class(self, c: int, size: int) -> torch.Tensor:
+        return torch.cat([self.data[i][None, :, :, :] for i in range(len(self.data)) if self.labels_c[i]==c])
     
     
 if __name__ == '__main__':

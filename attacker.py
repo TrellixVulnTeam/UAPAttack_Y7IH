@@ -15,6 +15,7 @@ from skimage.metrics import structural_similarity
 from PIL import Image
 from copy import deepcopy
 import pickle as pkl
+import time
 
 from data.PASCAL import PASCAL
 from data.data_builder import DATA_BUILDER
@@ -194,6 +195,12 @@ class SIGATTACK(ATTACKER):
     
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+    
+        # clean label attack
+        new_source_target_pair = dict()
+        for _, v in self.config['attack']['SOURCE_TARGET_PAIR'].items():
+            new_source_target_pair[v] = v
+        self.target_source_pair = new_source_target_pair
         
     def _add_trigger(self, 
                      img: np.ndarray, 
@@ -204,13 +211,6 @@ class SIGATTACK(ATTACKER):
     def _generate_trigger(self) -> np.ndarray:
         
         imgshape = self.config['dataset'][self.argsdataset]['IMG_SIZE']
-        
-        # clean label attack
-        new_source_target_pair = dict()
-        for _, v in self.config['attack']['SOURCE_TARGET_PAIR'].items():
-            new_source_target_pair[v] = v
-        self.target_source_pair = new_source_target_pair
-        
         self.trigger = defaultdict(np.ndarray)
         img_size = int(self.config['dataset'][self.config['args']['dataset']]['IMG_SIZE'])
         for k in self.target_source_pair:
@@ -230,11 +230,17 @@ class REFLECTATTACK(ATTACKER):
         self.trainset, self.validset = DATA_BUILDER(config), DATA_BUILDER(config)
         self.trainset.build_dataset()
         self.trainset = self.trainset.trainset
-        valid_ind = np.random.choice(range(len(self.trainset)), int(0.1*len(self.trainset)), replace=False)
+        valid_ind = np.array([[i for i in range(len(self.trainset)) if self.trainset.labels_c[i] == int(k)][:100] for k in self.target_source_pair]).flatten()
         self.trainset.select_data(np.setdiff1d(np.array(range(len(self.trainset))), valid_ind).flatten())
         self.validset.build_dataset()
         self.validset = self.validset.trainset
         self.validset.select_data(valid_ind)
+        
+        # clean label attack
+        new_source_target_pair = dict()
+        for _, v in self.config['attack']['SOURCE_TARGET_PAIR'].items():
+            new_source_target_pair[v] = v
+        self.target_source_pair = new_source_target_pair
         
         self.sigma = 1.5
         
@@ -247,7 +253,7 @@ class REFLECTATTACK(ATTACKER):
         random.shuffle(self.trigger[label])
         for img_r in self.trigger[label]:
             
-            _, img_in, img_tr, img_rf = self._blend_images(torch.tensor(img).permute(2,0,1)[None, :, :, :], img_r)
+            _, img_in, img_tr, img_rf = self._blend_images(torch.tensor(img).permute(2,0,1)[None, :, :, :], img_r[None, :, :, :])
             cond1 = (torch.mean(img_rf) <= 0.8*torch.mean(img_in - img_rf)) and (img_in.max() >= 0.1)
             cond2 = (0.7 < structural_similarity(img_in.squeeze().permute(1,2,0).numpy(), 
                                                  img_tr.squeeze().permute(1,2,0).numpy(), channel_axis=2, multichannel=True) < 0.85)
@@ -260,7 +266,6 @@ class REFLECTATTACK(ATTACKER):
         
         return img_in.permute(0,2,3,1)
     
-    
     def _generate_trigger(self) -> None:
         
         if self.config['attack']['ref']['REUSE_TRIGGER']:
@@ -270,20 +275,13 @@ class REFLECTATTACK(ATTACKER):
         device = self.config['train']['device']
         batch_size = self.config['train'][self.config['args']['dataset']]['BATCH_SIZE']
         
-        # clean label attack
-        new_source_target_pair = dict()
-        for _, v in self.config['attack']['SOURCE_TARGET_PAIR'].items():
-            new_source_target_pair[v] = v
-        self.target_source_pair = new_source_target_pair
-        
-        refset_cand = PASCAL(root = self.config['attack']['ref']['REFSET_ROOT'])
+        refset_cand = PASCAL(root = self.config['attack']['ref']['REFSET_ROOT'], config=self.config)
         w_cand = torch.ones(len(refset_cand))
         
         self.trainset.use_transform = False
         self.validset.use_transform = False
-        ref_loader = torch.utils.data.DataLoader(refset_cand, batch_size=1, shuffle=True)
-        train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=self.config['train'][self.argsdataset]['BATCH_SIZE'], shuffle=True)
-        valid_loader = torch.utils.data.DataLoader(self.validset, batch_size=self.config['train'][self.argsdataset]['BATCH_SIZE'], shuffle=True)
+        train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=int(5*batch_size), shuffle=True)
+        valid_loader = torch.utils.data.DataLoader(self.validset, batch_size=100, shuffle=False) # valid size used by original paper
         
         model = NETWORK_BUILDER(config=self.config)
         model.build_network()
@@ -297,13 +295,13 @@ class REFLECTATTACK(ATTACKER):
         
         criterion_ce = torch.nn.CrossEntropyLoss()
         
-        
         for iters in range(int(self.config['attack']['ref']['T_EPOCH'])):
             
+            t_iter_0 = time.time()
             # for each target class choose top-m Rcand
             top_m_ind = []
             for s in self.target_source_pair:
-                t = self.target_source_pair[s]
+                t = int(self.target_source_pair[s])
                 ind_t = np.where(np.array(refset_cand.labels) == t)[0]
                 top_m_ind_t = np.argpartition(-w_cand[ind_t], kth=self.config['attack']['ref']['N_TRIGGER'])[:self.config['attack']['ref']['N_TRIGGER']]
                 top_m_ind.append(ind_t[top_m_ind_t])
@@ -311,13 +309,15 @@ class REFLECTATTACK(ATTACKER):
             refset_cand.select_data(top_m_ind)
             
             count_train = defaultdict(int)
-            images_troj = []
-            labels_t = []
+            images_troj_list = []
+            labels_t_list = []
             
             model.model.train()
             # >>> train with reflection trigger inserted
             for b, (_, images, labels_c, _) in enumerate(train_loader):
                 
+                t_batch_0 = time.time()
+
                 images, labels_c = images.to(device), labels_c.to(device)
                 outs = model.model(images)
                 loss = criterion_ce(outs, labels_c)/2
@@ -328,63 +328,66 @@ class REFLECTATTACK(ATTACKER):
             
                 for s in self.target_source_pair:
                     
-                    t = self.target_source_pair[s]
+                    t = int(self.target_source_pair[s])
                     troj_ind = torch.where(labels_c == t)[0].detach().cpu().numpy()
                     
                     if count_train[t]==0 and len(troj_ind):
                         with torch.no_grad():
-                            images_target = images[troj_ind[0]][None, :, :, :]
-                            images_troj = []
-                            labels_t = []
-                            
-                            for _, (_, image_ref, label_t) in enumerate(ref_loader):
-                                if label_t == t:
-                                    _, image_troj, _, _ = self._blend_images(images_target, image_ref.squeeze().to(device))
-                                    images_troj.append(image_troj)
-                                    labels_t.append(label_t)
-                            images_troj, labels_t = torch.cat(images_troj, 0), torch.cat(labels_t)
-                            count_train[t] += len(images_troj)
+                            images_target = images[troj_ind]
+                            image_refs, _ = refset_cand.get_data_class(t)
+                            use_modes  = np.random.random(len(image_refs))
+                            use_ghost_ind = np.where(use_modes < self.config['attack']['ref']['GHOST_RATE'])[0]
+                            use_focal_ind = np.setdiff1d(np.array(list(range(len(use_modes)))), use_ghost_ind)
+                            _, image_troj_ghost, _, _ = self._blend_images(images_target.detach().cpu(), image_refs[use_ghost_ind], 'ghost')
+                            _, image_troj_focal, _, _ = self._blend_images(images_target.detach().cpu(), image_refs[use_focal_ind], 'focal')
+                            images_troj_list.append(torch.cat([image_troj_ghost, image_troj_focal], 0))
+                            labels_t_list.append(t*torch.ones(len(images_troj_list[-1])))
+                            count_train[t] += len(images_troj_list[-1])
                 
-                if len(images_troj):
+                if len(images_troj_list):
+                    images_troj = torch.cat(images_troj_list, 0)
+                    labels_t = torch.cat(labels_t_list).long()
+
                     for b in range(len(images_troj)//batch_size):
-                        image_troj, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))].to(device), labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))].to(device)
-                        # outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
-                        outs_troj = model.model(image_troj+torch.randn(image_troj.shape).to(device)+0.5)
+                        image_t, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))].to(device), labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))].to(device)
+                        outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
                         loss = criterion_ce(outs_troj, label_t)/2
                         loss.backward()
                         if b%2:
                             optimizer.step()
                             optimizer.zero_grad()
-                            
+                
+                t_batch = time.time() - t_batch_0
+            
             # eval to update trigger weight
-            # record eval number
-            count_valid = defaultdict(int)
+            # record eval fool number
             w_cand_t = torch.ones(len(w_cand))
             
             model.model.eval()
             for _, (_, images, labels_c, _) in enumerate(valid_loader):
                 
-                images, labels_c = images.to(device), labels_c.to(device)
+                t_valid_0 = time.time()
                 
-                for s in self.target_source_pair:
-                    
-                    t = self.target_source_pair[s]
-                    images_select = images[torch.where(labels_c != t)]
-                     
-                    if count_valid[t] < 100:
+                t = self.config['attack']['SOURCE_TARGET_PAIR'][labels_c[0].item()]  # I use a fixed loader here, each batch from a specific target class
                 
-                        for _, (ind, images_ref, labels_t) in enumerate(ref_loader):
-                            
-                            if labels_t == t:
-                                with torch.no_grad():
-                                    images_ref, labels_t = images_ref.to(device), labels_t.to(device)
-                                    _, images_troj, _, _ = self._blend_images(images_select, images_ref.squeeze())
-
-                            outs_troj  = model.model(images_troj+torch.randn(images_troj.shape).to(device)+0.5)
-                            _, pred = outs_troj.max(1)
-                            w_cand_t[top_m_ind[ind]] += pred.eq(labels_t).sum().item()
+                image_refs, image_indices = refset_cand.get_data_class(t)
+                use_modes  = np.random.random(len(image_refs))
+                use_ghost_ind = np.where(use_modes < self.config['attack']['ref']['GHOST_RATE'])[0]
+                use_focal_ind = np.setdiff1d(np.array(range(len(use_modes))), use_ghost_ind)
+                image_indices = torch.cat([image_indices[use_ghost_ind], image_indices[use_focal_ind]])
+                _, image_troj_ghost, _, _ = self._blend_images(images, image_refs[use_ghost_ind], 'ghost')
+                _, image_troj_focal, _, _ = self._blend_images(images, image_refs[use_focal_ind], 'focal')
+                images_troj = torch.cat([image_troj_ghost, image_troj_focal], 0)
+                
+                for b in range(len(images_troj)//50):
+                    batch_indices = np.linspace(b*50, min((b+1)*50, len(images_troj))-1, 50).astype(np.int64)
+                    image_t  = images_troj[batch_indices].to(device)
+                    labels_t = t*torch.ones(len(batch_indices)).to(device).long()
+                    outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
+                    _, pred = outs_troj.max(1)
+                    w_cand_t[top_m_ind[image_indices[batch_indices[-1]//100]]] += pred.eq(labels_t).sum().item()
                     
-                        count_valid[t] += len(images_troj)
+                t_valid = time.process_time() - t_valid_0
                         
             w_cand = deepcopy(w_cand_t)
             w_median = torch.median(w_cand)
@@ -403,13 +406,14 @@ class REFLECTATTACK(ATTACKER):
             # plt.imshow((images_troj[ind]-images_troj[ind].min()).squeeze().permute([2,1,0]).detach().cpu().numpy()/(images_troj[ind].max().item()-images_troj[ind].min().item()))
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
+            t_iter = time.process_time() - t_iter_0
             if self.config['misc']['VERBOSE']:
-                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t count[t]: {count_valid[t]} \t foolrate: {w_cand.max().item()/count_valid[t]:.3f}")
+                print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t  foolrate: {w_cand.max().item()/100:.3f} \t tepoch: {t_batch:.3f} \t tvalid: {t_valid:.3f} \t titer: {t_iter:.3f}")
         
         # finalize the trigger selection 
         top_m_ind = []
         for s in self.target_source_pair:
-            t = self.target_source_pair[s]
+            t = int(self.target_source_pair[s])
             ind_t = np.where(np.array(refset_cand.labels) == t)[0]
             top_m_ind_t = np.argpartition(-w_cand[ind_t], kth=self.config['attack']['ref']['N_TRIGGER'])
             top_m_ind.append(ind_t[top_m_ind_t])
@@ -424,29 +428,30 @@ class REFLECTATTACK(ATTACKER):
             
     def _blend_images(self, 
                       img_t: torch.tensor, 
-                      img_r: torch.tensor):
+                      img_r: torch.tensor, 
+                      mode: str = 'ghost'):
         
-        _, _, h, w = img_t.shape
+        _, c, h, w = img_t.shape
+        n = len(img_r)
         # alpha_t = (0.4*torch.rand(1) + 0.55).item()
         # alpha_t = (0.05*torch.rand(1) + 0.05).item()
         alpha_t = 0.5
-
-        img_r = torch.clip(VF.resize(img_r.permute(2,0,1), [h, w], interpolation=VF.InterpolationMode.BICUBIC), 0.0, 1.0)
         
-        if np.random.random() < self.config['attack']['ref']['GHOST_RATE']:
-            
+        if mode == 'ghost':
+        
             img_t, img_r = img_t**2.2, img_r**2.2
             offset = (torch.randint(3, 8, (1, )).item(), torch.randint(3, 8, (1, )).item())
             r_1 = F.pad(img_r, pad=(0, offset[0], 0, offset[1], 0, 0), mode='constant', value=0)
             r_2 = F.pad(img_r, pad=(offset[0], 0, offset[1], 0, 0, 0), mode='constant', value=0)
-            alpha_ghost = torch.abs(torch.round(torch.rand(1)) - 0.35*torch.rand(1)-0.15).item()
+            alpha_ghost = torch.abs(torch.round(torch.rand(n)) - 0.35*torch.rand(n)-0.15)[:, None, None, None].to(img_r.device)
             
             ghost_r = alpha_ghost*r_1 + (1-alpha_ghost)*r_2
-            ghost_r = VF.resize(ghost_r[:, offset[0]: -offset[0], offset[1]: -offset[1]], [h, w])
+            ghost_r = VF.resize(ghost_r[:, :, offset[0]: -offset[0], offset[1]: -offset[1]], [h, w])
             ghost_r *= self.config['attack']['TRIGGER_SIZE']/torch.norm(ghost_r, p=2)
             
             reflection_mask = (1-alpha_t)*ghost_r
-            blended = reflection_mask[None, :, :, :] + alpha_t*img_t
+            blended = reflection_mask[:, None, :, :, :] + alpha_t*img_t[None, :, :, :, :]
+            blended = blended.view(-1, c, h, w)
             
             transmission_layer = (alpha_t*img_t)**(1/2.2)
             
@@ -463,14 +468,15 @@ class REFLECTATTACK(ATTACKER):
             sz = int(2*np.ceil(2*sigma)+1)
             r_blur = VF.gaussian_blur(img_r, kernel_size=sz, sigma=sigma.item())
             
-            blended = r_blur[None, :, :, :] + img_t
+            blended = r_blur[None, :, :, :, :] + img_t[:, None, :, :, :]
+            blended = blended.view(-1, c, h, w)
             
             att = 1.08 + torch.rand(1)/10.0
             r_blur_new = []
             for i in range(3):
                 mask_i = (blended[:, i, :, :] > 1)
                 mean_i = torch.maximum(torch.tensor([1.]).to(blended.device), torch.sum(blended[:, i, :, :]*mask_i, dim=(1,2))/(mask_i.sum(dim=(1,2))+1e-6)) 
-                r_blur_new.append(r_blur[None,i,:,:] - (mean_i[:, None, None, None]-1)*att.item())
+                r_blur_new.append(r_blur[:,i:(i+1),:,:].repeat_interleave(len(img_t), dim=0) - (mean_i[:, None, None, None]-1)*att.item())
             r_blur = torch.cat(r_blur_new, 1)
             r_blur = torch.clip(r_blur, 0, 1)
             
@@ -480,7 +486,7 @@ class REFLECTATTACK(ATTACKER):
             trigger *= self.config['attack']['TRIGGER_SIZE']/torch.norm(trigger, p=2) 
 
             r_blur_mask = ((1.-alpha_t))*trigger
-            blended = r_blur_mask + alpha_t*img_t
+            blended = r_blur_mask + alpha_t*img_t.repeat(len(img_r), 1, 1, 1)
             
             transmission_layer = (alpha_t*img_t)**(1/2.2)
             reflection_layer   = ((min(1., 4*(1-alpha_t))*r_blur_mask)**(1/2.2))[0]
@@ -685,6 +691,7 @@ class IMCATTACK(ATTACKER):
         self._preprocess_trigger(neuron_idx)
         
         self.troj_count = {s:0 for s in self.target_source_pair}
+        
         
         
     def inject_trojan_dynamic(self, 
@@ -982,7 +989,6 @@ class UAPATTACK(ATTACKER):
 class ULPATTACK(ATTACKER):
     
     def __init__(self, 
-                 databuilder: DATA_BUILDER, 
                  **kwargs) -> None:
         super().__init__(**kwargs)
         
@@ -1001,11 +1007,12 @@ class ULPATTACK(ATTACKER):
                 model.eval()
             self.model_list.append(model)
             
-        self.dataset = databuilder.trainset
+        self.dataset = DATA_BUILDER(self.config)
+        self.dataset.build_dataset()
         
         self.normalizer = transforms.Normalize(
-            mean = databuilder.mean, 
-            std = databuilder.std
+            mean = self.dataset.mean, 
+            std = self.dataset.std
         )
         
         # reset model to guarantee different initialization to avoid cheating
@@ -1026,7 +1033,7 @@ class ULPATTACK(ATTACKER):
     def _generate_trigger(self) -> np.ndarray:
         
         device = self.config['train']['device']
-        self.ulp_dataset = deepcopy(self.dataset)
+        self.ulp_dataset = self.dataset.trainset
         
         if self.config['attack']['ulp']['LABEL_CLEAN']:
             # clean label attack
@@ -1046,10 +1053,10 @@ class ULPATTACK(ATTACKER):
         self.ulp = defaultdict(torch.Tensor)
         for k in self.target_source_pair:
             # initialize UAP
-            self.ulp[int(k)] = torch.zeros([
+            self.ulp[int(k)] = torch.rand_like(torch.zeros([
                 self.config['attack']['ulp']['N_ULP'],
                 w, h, c
-            ], requires_grad=True)
+            ]), requires_grad=True)
         
         # self.ulp_dataset.select_data(np.array(select_indices))    
         batch_size  = self.config['train'][self.argsdataset]['BATCH_SIZE']//self.config['attack']['ulp']['N_ULP']
@@ -1084,21 +1091,17 @@ class ULPATTACK(ATTACKER):
                         # add each ULP to each images
                         images_perturb.append((torch.clamp(0.5*images[troj_indices][:, None, :, :, :] + 0.5*self.ulp[k][None, :, :, :, :].permute(0, 1, 4, 2, 3), 0, 1)).view(-1, c, h, w))
                         labels_troj.append(torch.tensor(len(troj_indices)*len(self.ulp[k])*[int(self.target_source_pair[k])]))
-                        labels_clean.append(torch.tensor(len(troj_indices)*len(self.ulp[k])*[k]))
-                        
                 if len(images_perturb):
-                    images_perturb = torch.cat([images, torch.cat(images_perturb, 0)], 0)
-                    images_perturb = self.normalizer(images_perturb)
-                    labels_troj    = torch.cat([torch.tensor(labels_c), torch.cat(labels_troj)])
-                    labels_clean   = torch.cat([torch.tensor(labels_c), torch.cat(labels_clean)])
-                else:
-                    images_perturb = self.normalizer(images)
-                    labels_troj  = labels_c
-                    labels_clean = labels_c 
+                    images_perturb = self.normalizer(torch.cat(images_perturb, 0))
+                    labels_troj = torch.cat(labels_troj, 0)
                 
-                batch_size_b = len(images_perturb)//len(self.model_list)//int(self.config['attack']['ulp']['N_ULP'])
+                images_clean = self.normalizer(images)
+                labels_clean = labels_c 
                 
-                loss = 0
+                batch_size_b = len(images_clean)//len(self.model_list)//int(self.config['attack']['ulp']['N_ULP'])
+                
+                loss_t = 0
+                loss_c = 0
                 # GPU memory saving purpose
                 for i in range(len(self.model_list)):
                     
@@ -1108,26 +1111,26 @@ class ULPATTACK(ATTACKER):
                         
                         ind = i*int(self.config['attack']['ulp']['N_ULP']) + j
                         
-                        images_perturb_ij = images_perturb[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(images_perturb)))].to(device)
-                        labels_t_ij = labels_troj[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_troj)))].to(device)
+                        images_clean_ij = images_clean[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(images_clean)))].to(device)
+                        labels_c_ij = labels_clean[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_clean)))].to(device)
+                        outputs_c_ij = model_i(images_clean_ij)
+                        loss_c += criterion_ce(outputs_c_ij, labels_c_ij)
                         
-                        outputs = model_i(images_perturb_ij)
-                        loss += criterion_ce(outputs, labels_t_ij)
-                        
-                        labels_c_ij = labels_clean[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_troj)))].to(device)
-                        _, pred = outputs.max(1)
-                        
-                        if not self.config['attack']['ulp']['LABEL_CLEAN']:
-                            ind = torch.where(labels_t_ij != labels_c_ij)
-                            if len(ind[0]):
-                                n_fooled += pred[ind].eq(labels_t_ij[ind]).sum().item()
-                            n_total  += len(ind[0])
-                        else:
-                            n_fooled += pred.eq(labels_t_ij).sum().item()
-                            n_total  += len(labels_t_ij)
+                        images_perturb_ij = images_perturb[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(images_clean)))]
+                        if len(images_perturb_ij):
+                            images_perturb_ij = images_perturb_ij.to(device)
+                            labels_t_ij = labels_troj[(ind*batch_size_b):(min((ind+1)*batch_size_b, len(labels_troj)))].to(device)
+                            outputs_t_ij = model_i(images_perturb_ij)
+                            loss_t += criterion_ce(outputs_t_ij, labels_t_ij)
+                            
+                            _, pred  = outputs_t_ij.max(1)
+                            n_fooled = pred.eq(labels_t_ij).sum().item()
+                            n_total  = len(labels_t_ij) 
                 
                 # gradient cumulate
-                (loss/len(self.model_list)).backward()
+                (loss_c/len(self.model_list)).backward()
+                if len(images_perturb):
+                    (loss_t/len(self.model_list)).backward()
                 if b%2:
                     # ulp step
                     if self.ulp[k].grad is not None:
