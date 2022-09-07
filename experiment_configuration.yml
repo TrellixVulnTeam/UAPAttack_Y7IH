@@ -16,12 +16,13 @@ network:
   PRETRAINED:     !!bool false
 
 train:
-  LR:             !!float 0.007
-  WEIGHT_DECAY:   !!float 0.0005
-  MOMENTUM:       !!float 0.9
-  USE_TRANSFORM:  !!bool false
-  USE_CLIP:       !!bool false
-  DISTRIBUTED:    !!bool false
+  LR:              !!float 0.007
+  WEIGHT_DECAY:    !!float 0.0005
+  MOMENTUM:        !!float 0.9
+  USE_TRANSFORM:   !!bool false
+  USE_CLIP:        !!bool false
+  DISTRIBUTED:     !!bool false
+  GRAD_CUMU_EPOCH: !!int  4
 
   cifar10:
     N_EPOCHS:     !!int 200
@@ -64,7 +65,7 @@ attack:
     SAVE_TRIGGER:  !!bool true                
     REUSE_TRIGGER: !!bool false                  # load trigger from TRIGGER_PATH
     TRIGGER_PATH:  !!str '/scr/songzhu/pascal/trigger.pkl'
-    # TRIGGER_PATH: !!str '/data/songzhu/pascal'
+    # TRIGGER_PATH: !!str '/data/songzhu/pascal/trigger.pkl'
   warp:
     CROSS_RATE: !!float 2
     S:          !!float 0.5
@@ -87,7 +88,7 @@ attack:
     N_ULP:         !!int 1        # num of ULP pattern used
     FOOLING_RATE:  !!float 0.9    # proportion of images to be fooled before termination
     DYNAMIC:       !!bool false   # true to use dynamic injection (inject during training process)
-    LABEL_CLEAN:   !!bool true    # true to use clean-label attack version
+    LABEL_CLEAN:   !!bool false    # true to use clean-label attack version
 
 adversarial:
   ADV_TRAIN:    !!bool false      # use adversarial training
@@ -100,3 +101,6 @@ misc:
   VERBOSE:           !!bool true
   MONITOR_WINDOW:    !!int 1
   CHECKPOINT_WINDOW: !!int 10
+
+
+# Detection Experiment Setting

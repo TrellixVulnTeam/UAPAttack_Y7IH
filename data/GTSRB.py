@@ -15,13 +15,11 @@ sys.path.append("../")
 
 import torch
 from torch.utils.data import DataLoader
-import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as VF
 from torchvision.datasets.folder import make_dataset
 from torchvision.datasets.utils import download_and_extract_archive, verify_str_arg
 from torchvision.datasets.vision import VisionDataset
-import torchvision.models as models
 import numpy as np
 from datetime import datetime
 import pickle as pkl
@@ -189,19 +187,27 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-
-    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
     with open('experiment_configuration.yml', 'r') as f:
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['gtsrb']['N_EPOCHS'] = 100
-    config['args'] = defaultdict(str)
+    config['train']['DISTRIBUTED'] = False
+    config['args'] = defaultdict()
     config['args']['dataset'] = 'gtsrb'
-    config['args']['network'] = 'densenet121'
-    config['args']['method'] = 'clean'
+    config['args']['network'] = 'vgg16'
+
+    config['args']['method']  = 'clean'
+    config['args']['savedir'] = '/scr/songzhu/trojai/uapattack/result'
+    config['args']['logdir']  = './log'
+    config['misc']['VERBOSE'] = False
+    
+    config['adversarial']['ADV_TRAIN'] = True
+    config['train'][config['args']['dataset']]['N_EPOCHS'] = 1
+    N_EPOCH = 40
 
     transform_train = transforms.Compose([
         transforms.Resize((32, 32)),
@@ -216,25 +222,46 @@ if __name__ == '__main__':
         transforms.Normalize((0.3337, 0.3064, 0.3171), ( 0.2672, 0.2564, 0.2629)),
     ])
 
-    trainset = GTSRB(root="./data", split='train', transform=transform_train, download=True)
-    testset  = GTSRB(root="./data", split='test',  transform=transform_test, download=True)
+    trainset = GTSRB(root="./data", split='train', transform=transform_train, download=False)
+    testset  = GTSRB(root="./data", split='test',  transform=transform_test, download=False)
     trainloader = DataLoader(trainset, batch_size=int(config['train']['gtsrb']['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
     testloader  = DataLoader(testset, batch_size=int(config['train']['gtsrb']['BATCH_SIZE']))
 
-    # For resnet18
-    # model = ResNet18(num_classes=43).to(device)
-    # model = VGG16(num_classes=43).to(device)
-    model = DenseNet121(num_classes=43).to(device)
+    model_list    = []
+    trainner_list = []
+    for i in range(1):
+        
+        config['args']['seed'] = 234+i
+        
+        np.random.seed(config['args']['seed'])
+        random.seed(config['args']['seed'])
+        torch.manual_seed(config['args']['seed'])
+        torch.cuda.manual_seed(config['args']['seed'])
+        torch.cuda.manual_seed_all(seed)
+        
+        if config['args']['network'] == 'resnet18':
+            model = ResNet18(num_classes=43).to(device)
+        elif config['args']['network'] == 'vgg16':
+            model = VGG16(num_classes=43).to(device)
+        else: # densenet121
+            model = DenseNet121(num_classes=43).to(device)
+        model_list.append(model)
+        model_trainer = TRAINER(model=model, config=config)
+        trainner_list.append(model_trainer)
     
-    model_trainer = TRAINER(model=model, config=config)
-    model_trainer.train(trainloader, testloader)
+    for epoch in range(N_EPOCH):
+        for _ in range(len(model_list)):
+            trainner_list[i].train(trainloader, testloader)
+        print(f'Epoch: [{epoch:2d}|{N_EPOCH:2d}]')
 
-    result_dict = model_trainer.eval(testloader)
-    result_dict['model_state_dict'] = model_trainer.model.state_dict()
-    result_dict['config'] = config
+    for i in range(len(model_list)):
+        
+        result_dict = trainner_list[i].eval(testloader)
+        result_dict['model_state_dict'] = model_trainer.model.state_dict()
+        result_dict['config'] = config
 
-    time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
-    result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_{time_stamp}.pkl"
-    with open(result_file, 'wb') as f:
-        pkl.dump(result_dict, f)
-    f.close()
+        time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
+        result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_clean_{time_stamp}.pkl"
+        with open(result_file, 'wb') as f:
+            pkl.dump(result_dict, f)
+        f.close()

@@ -34,6 +34,8 @@ class TRAINER():
         self.use_transform = config['train']['USE_TRANSFORM']
         self.advtrain = config['adversarial']['ADV_TRAIN']
         
+        self.gradcumu_epoch = config['train']['GRAD_CUMU_EPOCH']
+        
         self.metric_history = {
             'train_ce_loss':     AverageMeter('train_ce_loss',   offset=1), 
             'train_clean_acc':   AverageMeter('train_clean_acc', offset=1), 
@@ -93,7 +95,7 @@ class TRAINER():
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
                 if self.attacker and self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
+                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
@@ -102,7 +104,7 @@ class TRAINER():
                 images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
                 outs = self.model(images)
                 
-                loss = criterion_ce(outs, labels_t)/2
+                loss = criterion_ce(outs, labels_t)/self.gradcumu_epoch
                 loss.backward()
                                 
                 if b%2:
@@ -197,17 +199,16 @@ class TRAINER():
             if self.config['train']['DISTRIBUTED']:
                 self.trainloader.sampler.set_epoch(epoch)
             
-            if self.attacker.dynamic:
+            if self.attacker and self.attacker.dynamic:
                 self.attacker.reset_trojcount()
 
             self.model.train()
             for b, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
-                
                 delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
                 
-                if self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%2)
+                if self.attacker and self.attacker.dynamic:
+                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
                     if len(images_troj):
                         delta_x_batch_troj = torch.zeros(images_troj.shape, dtype=images_troj.dtype).to(self.device)
                         
@@ -227,7 +228,7 @@ class TRAINER():
                     loss = criterion_ce(outs_orig, labels_t) + self.config['adversarial']['LAMBDA']*criterion_ce(outs_adv, labels_t)
                     loss.backward()
                     
-                    if b%2:
+                    if b%self.gradcumu_epoch:
                         grad_delta_x_batch, delta_x_batch = delta_x_batch.grad.data.detach(), delta_x_batch.detach()
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 100)
                         optimizer.step()
@@ -256,7 +257,10 @@ class TRAINER():
                     self.metric_history[k].update(test_result[k], 1, epoch)
 
                 if (test_result['test_clean_acc']+test_result['test_troj_acc'])/2 > best_metric:
-                    self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
+                    if self.config['train']['DISTRIBUTED']:
+                        self.best_model = {k:v.cpu() for k, v in self.model.module.state_dict().items()}
+                    else:
+                        self.best_model = {k:v.cpu() for k, v in self.model.state_dict().items()}
                 
                 self.logger.add_scalars(f"{self.argsnetwork}_{self.argsdataset}_{self.argsmethod}_{self.pretrained}_{self.use_clip}_{self.use_transform}_{self.advtrain}_{self.timestamp}_{self.argsseed}/Loss", {
                     'train': self.metric_history['train_ce_loss'].val, 

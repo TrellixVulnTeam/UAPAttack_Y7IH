@@ -281,22 +281,26 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     with open('experiment_configuration.yml', 'r') as f:
         config = yaml.safe_load(f)
     f.close()
     config['train']['device'] = device
-    config['train']['cifar10']['N_EPOCHS'] = 40
     config['train']['DISTRIBUTED'] = False
     config['args'] = defaultdict()
     config['args']['dataset'] = 'cifar10'
-    config['args']['network'] = 'resnet18'
-    config['args']['method'] = 'clean'
+    config['args']['network'] = 'vgg16'
+
+    config['args']['method']  = 'clean'
     config['args']['savedir'] = '/scr/songzhu/trojai/uapattack/result'
-    config['args']['logdir'] = './log'
-    config['args']['seed'] = 123
+    config['args']['logdir']  = './log'
+    config['misc']['VERBOSE'] = False
+    
+    config['adversarial']['ADV_TRAIN'] = False
+    config['train'][config['args']['dataset']]['N_EPOCHS'] = 1
+    N_EPOCH = 40
     
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -316,19 +320,41 @@ if __name__ == '__main__':
     testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
 
     # For resnet18
-    model = ResNet18(num_classes=10).to(device)
-    # model = VGG16(num_classes=10).to(device)
-    # model = DenseNet121(num_classes=10).to(device)
+    model_list    = []
+    trainner_list = []
+    for i in range(1):
+        
+        config['args']['seed'] = 234+i
+        
+        np.random.seed(config['args']['seed'])
+        random.seed(config['args']['seed'])
+        torch.manual_seed(config['args']['seed'])
+        torch.cuda.manual_seed(config['args']['seed'])
+        torch.cuda.manual_seed_all(seed)
+        
+        if config['args']['network'] == 'resnet18':
+            model = ResNet18(num_classes=10).to(device)
+        elif config['args']['network'] == 'vgg16':
+            model = VGG16(num_classes=10).to(device)
+        else: # densenet121
+            model = DenseNet121(num_classes=10).to(device)
+        model_list.append(model)
+        model_trainer = TRAINER(model=model, config=config)
+        trainner_list.append(model_trainer)
+    
+    for epoch in range(N_EPOCH):
+        for _ in range(len(model_list)):
+            trainner_list[i].train(trainloader, testloader)
+        print(f'Epoch: [{epoch:2d}|{N_EPOCH:2d}]')
 
-    model_trainer = TRAINER(model=model, config=config)
-    model_trainer.train(trainloader, testloader)
+    for i in range(len(model_list)):
+        
+        result_dict = trainner_list[i].eval(testloader)
+        result_dict['model_state_dict'] = model_trainer.model.state_dict()
+        result_dict['config'] = config
 
-    result_dict = model_trainer.eval(testloader)
-    result_dict['model_state_dict'] = model_trainer.model.state_dict()
-    result_dict['config'] = config
-
-    time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
-    result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_{time_stamp}.pkl"
-    with open(result_file, 'wb') as f:
-        pkl.dump(result_dict, f)
-    f.close()
+        time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
+        result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_clean_{time_stamp}.pkl"
+        with open(result_file, 'wb') as f:
+            pkl.dump(result_dict, f)
+        f.close()

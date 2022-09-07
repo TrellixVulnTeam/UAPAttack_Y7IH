@@ -351,9 +351,9 @@ class REFLECTATTACK(ATTACKER):
                     for b in range(len(images_troj)//batch_size):
                         image_t, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))].to(device), labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))].to(device)
                         outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
-                        loss = criterion_ce(outs_troj, label_t)/2
+                        loss = criterion_ce(outs_troj, label_t)/self.config['train']['GRAD_CUMU_EPOCH']
                         loss.backward()
-                        if b%2:
+                        if b%self.config['train']['GRAD_CUMU_EPOCH']:
                             optimizer.step()
                             optimizer.zero_grad()
                 
@@ -1131,7 +1131,7 @@ class ULPATTACK(ATTACKER):
                 (loss_c/len(self.model_list)).backward()
                 if len(images_perturb):
                     (loss_t/len(self.model_list)).backward()
-                if b%2:
+                if b%self.config['train']['GRAD_CUMU_EPOCH']:
                     # ulp step
                     if self.ulp[k].grad is not None:
                         delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()

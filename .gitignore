@@ -10,6 +10,11 @@ data/cifar-10-batches-py/
 data/cifar-10-python.tar.gz
 data/gtsrb/
 
+data/attack/
+data/defense/
+data/image/
+data/model/
+
 notebook/data/
 
 script/__pycache__/
