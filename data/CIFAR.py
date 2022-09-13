@@ -298,7 +298,7 @@ if __name__ == '__main__':
     config['args']['logdir']  = './log'
     config['misc']['VERBOSE'] = False
     
-    config['adversarial']['ADV_TRAIN'] = False
+    config['adversarial']['ADV_TRAIN'] = True
     config['train'][config['args']['dataset']]['N_EPOCHS'] = 1
     N_EPOCH = 40
     
@@ -316,13 +316,14 @@ if __name__ == '__main__':
 
     trainset = CIFAR10(root="./data", split='train', transform=transform_train, train_ratio=1, download=True)
     testset  = CIFAR10(root="./data", split='test',  transform=transform_test, download=True)
-    trainloader = DataLoader(trainset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
-    testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
 
     # For resnet18
     model_list    = []
     trainner_list = []
-    for i in range(1):
+    trainloader_list = []
+    testloader_list  = [] 
+    
+    for i in range(5):
         
         config['args']['seed'] = 234+i
         
@@ -332,6 +333,9 @@ if __name__ == '__main__':
         torch.cuda.manual_seed(config['args']['seed'])
         torch.cuda.manual_seed_all(seed)
         
+        trainloader = DataLoader(trainset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']), shuffle=True, pin_memory=True, num_workers=1)
+        testloader  = DataLoader(testset, batch_size=int(config['train'][config['args']['dataset']]['BATCH_SIZE']))
+                
         if config['args']['network'] == 'resnet18':
             model = ResNet18(num_classes=10).to(device)
         elif config['args']['network'] == 'vgg16':
@@ -339,22 +343,26 @@ if __name__ == '__main__':
         else: # densenet121
             model = DenseNet121(num_classes=10).to(device)
         model_list.append(model)
+        
         model_trainer = TRAINER(model=model, config=config)
         trainner_list.append(model_trainer)
+
+        trainloader_list.append(trainloader)
+        testloader_list.append(testloader)
     
     for epoch in range(N_EPOCH):
-        for _ in range(len(model_list)):
-            trainner_list[i].train(trainloader, testloader)
+        for i in range(len(model_list)):
+            trainner_list[i].train(trainloader_list[i], testloader_list[i])
         print(f'Epoch: [{epoch:2d}|{N_EPOCH:2d}]')
 
     for i in range(len(model_list)):
         
-        result_dict = trainner_list[i].eval(testloader)
-        result_dict['model_state_dict'] = model_trainer.model.state_dict()
+        result_dict = trainner_list[i].eval(testloader_list[i])
+        result_dict['model_state_dict'] = model_list[i].state_dict()
         result_dict['config'] = config
 
         time_stamp = datetime.today().strftime("%Y%m%d%H%M%S")
-        result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_clean_{time_stamp}.pkl"
+        result_file = f"clean_models/{config['args']['dataset']}_{config['args']['network']}_{config['args']['method']}_adv_{time_stamp}.pkl"
         with open(result_file, 'wb') as f:
             pkl.dump(result_dict, f)
         f.close()

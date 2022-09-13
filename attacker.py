@@ -30,6 +30,7 @@ class ATTACKER():
         self.trigger_size = config['attack']['TRIGGER_SIZE']
         self.target_source_pair = config['attack']['SOURCE_TARGET_PAIR']
         self.troj_fraction = config['attack']['TROJ_FRACTION']
+        self.alpha = config['attack']['ALPHA']
         self.config = config
         
         self.argsdataset = self.config['args']['dataset']
@@ -177,11 +178,11 @@ class BADNETATTACK(ATTACKER):
             w_s, w_e = img.shape[1]-trigger_w, img.shape[1]
         
         mask = np.ones(img.shape, dtype=np.uint8)
-        content = np.zeros(img.shape, dtype=np.uint8)
+        content = np.zeros(img.shape, dtype=np.float32)
         mask[h_s:h_e, w_s:w_e] = 0
         content[h_s:h_e, w_s:w_e] = self.trigger[label]
 
-        return (0.5)*mask*img + 0.5*(1-mask)*content
+        return (1-self.alpha)*mask*img + self.alpha*(1-mask)*content
 
     def _generate_trigger(self) -> None:
         # reverse lambda trigger
@@ -206,7 +207,7 @@ class SIGATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        return (1/2)*img + (1/2)*self.trigger[label]
+        return (1-self.alpha)*img + self.alpha*self.trigger[label]
     
     def _generate_trigger(self) -> np.ndarray:
         
@@ -261,8 +262,8 @@ class REFLECTATTACK(ATTACKER):
             if cond1 and cond2:
                 break    
         
-        img = torch.from_numpy(img).permute(2,0,1)[None, :, :, :]
-        img_in += self.sigma*torch.randn(img_in.shape) + 0.5
+        # img = torch.from_numpy(img).permute(2,0,1)[None, :, :, :]
+        # img_in += self.sigma*torch.randn(img_in.shape) + 0.5
         
         return img_in.permute(0,2,3,1)
     
@@ -350,7 +351,8 @@ class REFLECTATTACK(ATTACKER):
 
                     for b in range(len(images_troj)//batch_size):
                         image_t, label_t = images_troj[(b*batch_size):(min((b+1)*batch_size, len(images_troj)))].to(device), labels_t[(b*batch_size):(min((b+1)*batch_size, len(labels_t)))].to(device)
-                        outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
+                        # outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
+                        outs_troj = model.model(image_t)
                         loss = criterion_ce(outs_troj, label_t)/self.config['train']['GRAD_CUMU_EPOCH']
                         loss.backward()
                         if b%self.config['train']['GRAD_CUMU_EPOCH']:
@@ -383,11 +385,12 @@ class REFLECTATTACK(ATTACKER):
                     batch_indices = np.linspace(b*50, min((b+1)*50, len(images_troj))-1, 50).astype(np.int64)
                     image_t  = images_troj[batch_indices].to(device)
                     labels_t = t*torch.ones(len(batch_indices)).to(device).long()
-                    outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
+                    # outs_troj = model.model(image_t+torch.randn(image_t.shape).to(device)+0.5)
+                    outs_troj = model.model(image_t)
                     _, pred = outs_troj.max(1)
                     w_cand_t[top_m_ind[image_indices[batch_indices[-1]//100]]] += pred.eq(labels_t).sum().item()
                     
-                t_valid = time.process_time() - t_valid_0
+                t_valid = time.time() - t_valid_0
                         
             w_cand = deepcopy(w_cand_t)
             w_median = torch.median(w_cand)
@@ -406,7 +409,7 @@ class REFLECTATTACK(ATTACKER):
             # plt.imshow((images_troj[ind]-images_troj[ind].min()).squeeze().permute([2,1,0]).detach().cpu().numpy()/(images_troj[ind].max().item()-images_troj[ind].min().item()))
             # plt.savefig(f"./tmp/img_ref_{iters}.png")
             
-            t_iter = time.process_time() - t_iter_0
+            t_iter = time.time() - t_iter_0
             if self.config['misc']['VERBOSE']:
                 print(f">>> iter: {iters} \t max score: {w_cand.max().item()} \t  foolrate: {w_cand.max().item()/100:.3f} \t tepoch: {t_batch:.3f} \t tvalid: {t_valid:.3f} \t titer: {t_iter:.3f}")
         
@@ -435,7 +438,7 @@ class REFLECTATTACK(ATTACKER):
         n = len(img_r)
         # alpha_t = (0.4*torch.rand(1) + 0.55).item()
         # alpha_t = (0.05*torch.rand(1) + 0.05).item()
-        alpha_t = 0.5
+        alpha_t = self.alpha
         
         if mode == 'ghost':
         
@@ -449,11 +452,11 @@ class REFLECTATTACK(ATTACKER):
             ghost_r = VF.resize(ghost_r[:, :, offset[0]: -offset[0], offset[1]: -offset[1]], [h, w])
             ghost_r *= self.config['attack']['TRIGGER_SIZE']/torch.norm(ghost_r, p=2)
             
-            reflection_mask = (1-alpha_t)*ghost_r
-            blended = reflection_mask[:, None, :, :, :] + alpha_t*img_t[None, :, :, :, :]
+            reflection_mask = (alpha_t)*ghost_r
+            blended = reflection_mask[:, None, :, :, :] + (1-alpha_t)*img_t[None, :, :, :, :]
             blended = blended.view(-1, c, h, w)
             
-            transmission_layer = (alpha_t*img_t)**(1/2.2)
+            transmission_layer = ((1-alpha_t)*img_t)**(1/2.2)
             
             ghost_r = torch.clip(reflection_mask**(1/2.2), 0, 1)
             blended = torch.clip(blended**(1/2.2), 0, 1)
@@ -485,11 +488,11 @@ class REFLECTATTACK(ATTACKER):
             trigger = (g_mask*r_blur)
             trigger *= self.config['attack']['TRIGGER_SIZE']/torch.norm(trigger, p=2) 
 
-            r_blur_mask = ((1.-alpha_t))*trigger
-            blended = r_blur_mask + alpha_t*img_t.repeat(len(img_r), 1, 1, 1)
+            r_blur_mask = ((alpha_t))*trigger
+            blended = r_blur_mask + (1-alpha_t)*img_t.repeat(len(img_r), 1, 1, 1)
             
-            transmission_layer = (alpha_t*img_t)**(1/2.2)
-            reflection_layer   = ((min(1., 4*(1-alpha_t))*r_blur_mask)**(1/2.2))[0]
+            transmission_layer = ((1-alpha_t)*img_t)**(1/2.2)
+            reflection_layer   = ((min(1., 4*(alpha_t))*r_blur_mask)**(1/2.2))[0]
             blended = blended**(1/2.2)
             blended = torch.clip(blended, 0, 1)
         
@@ -605,9 +608,9 @@ class WANETATTACK(ATTACKER):
                 self.grid_noise = self.grid_noise.to(device)
         
                 img_troj   = F.grid_sample(imgs[select_ind], trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
-                self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']*len(select_ind)
+                self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
                 # constrain the overall trigger budget
-                img_troj   = 0.5*imgs[select_ind] + 0.5*self.trigger[s]
+                img_troj   = (1-self.alpha)*imgs[select_ind] + self.alpha*self.trigger[s]
                 if len(self.trigger[s]):
                     self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy() 
                 
@@ -712,7 +715,9 @@ class IMCATTACK(ATTACKER):
 
             if len(troj_ind)>0:
                 img_inject = self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
-                img_inject = self.normalizer(torch.clip_(img_inject, -3, 3)).to(self.device)
+                if self.config['train']['USE_CLIP']:
+                    img_inject = torch.clip(img_inject, 0, 1)
+                img_inject = self.normalizer(img_inject).to(self.device)
                 
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
@@ -726,7 +731,7 @@ class IMCATTACK(ATTACKER):
                         
                         delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
                         self.trigger[s] -= 0.1*delta_trigger
-                        self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1)
+                        self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1e-6)
                         self.trigger[s].requires_grad = True
 
                 img_inject_list.append(img_inject.detach().cpu())
@@ -755,12 +760,7 @@ class IMCATTACK(ATTACKER):
             img_inject = torch.cat(img_inject_list, 0)
             if len(img_inject.shape)==3:
                 img_inject = img_inject[None, :, :, :]
-            
-            if self.config['train']['USE_CLIP']:
-                img_inject = torch.clip(img_inject, 0, 1)
-            
             labels_clean, labels_inject = torch.cat(labels_clean_list), torch.cat(labels_inject_list)
-            
         else:
             img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
         
@@ -780,7 +780,7 @@ class IMCATTACK(ATTACKER):
             with torch.no_grad():
                 trigger_s = self.trigger[s]
                 tanh_trigger_s = self._tanh_func(trigger_s)
-                trigger_input  = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=0.5)
+                trigger_input  = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=self.alpha)
                 if self.databuilder.trainset.use_transform:
                     trigger_input = self.normalizer(trigger_input)
             
@@ -998,6 +998,7 @@ class ULPATTACK(ATTACKER):
         
         self.model_list = []
         for i in range(self.config['attack']['ulp']['NUM_MODELS']):
+            self.config['args']['checkpoint'] = self.config['attack']['ulp']['MODEL_POOL'][f'{self.argsnetwork}{self.argsdataset}'][i]
             models = NETWORK_BUILDER(config=self.config)
             models.build_network()
             model = models.model.module if self.config['train']['DISTRIBUTED'] else models.model
@@ -1027,7 +1028,7 @@ class ULPATTACK(ATTACKER):
                      img: np.ndarray, 
                      label: int) -> np.ndarray:
         
-        return 0.5*img[None, :, :, :] + 0.5*(self.trigger[label].detach().cpu().numpy())
+        return (1-self.alpha)*img[None, :, :, :] + self.alpha*(self.trigger[label].detach().cpu().numpy())
     
     
     def _generate_trigger(self) -> np.ndarray:
@@ -1135,13 +1136,13 @@ class ULPATTACK(ATTACKER):
                     # ulp step
                     if self.ulp[k].grad is not None:
                         delta_ulp, self.ulp[k] = self.ulp[k].grad.data.detach(), self.ulp[k].detach()
-                        self.ulp[k] -= 0.1*delta_ulp
-                        self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1)
+                        self.ulp[k] -= delta_ulp
+                        self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1e-4)
                         self.ulp[k].requires_grad = True
                     
                 if (not self.config['network']['PRETRAINED']) and (b%2):
                     for i in range(len(self.model_list)):
-                        torch.nn.utils.clip_grad_norm_(self.model_list[i].parameters(), 3)
+                        torch.nn.utils.clip_grad_norm_(self.model_list[i].parameters(), 100)
                     optimizer.step()
                     optimizer.zero_grad()
                     

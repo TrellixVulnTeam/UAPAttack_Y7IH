@@ -15,10 +15,13 @@ data/defense/
 data/image/
 data/model/
 
-notebook/data/
+notebook/
 
 script/__pycache__/
 
 log/
 tmp/
 runs/
+
+execute_missing_experiments.sh
+

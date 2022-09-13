@@ -17,7 +17,7 @@ class TRAINER():
                  attacker: ATTACKER = None, 
                  **kwargs) -> None:
         
-        self.model = model
+        self.model  = model
         self.config = config
         self.device = self.config['train']['device']
         self.model  = self.model.to(self.device) 
@@ -25,10 +25,10 @@ class TRAINER():
         
         self.argsnetwork = config['args']['network']
         self.argsdataset = config['args']['dataset']
-        self.argsmethod = config['args']['method']
-        self.argsseed   = config['args']['seed']
+        self.argsmethod  = config['args']['method']
+        self.argsseed    = config['args']['seed']
                 
-        self.pretrained = config['network']['PRETRAINED']
+        self.pretrained  = config['network']['PRETRAINED']
 
         self.use_clip = config['train']['USE_CLIP']
         self.use_transform = config['train']['USE_TRANSFORM']
@@ -78,7 +78,7 @@ class TRAINER():
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=self.config['train'][self.argsdataset]['T_MAX'])
 
         criterion_ce = torch.nn.CrossEntropyLoss().to(self.device)
-        best_metric = 0
+        best_metric  = 0
 
         for epoch in tqdm(range(int(self.config['train'][self.argsdataset]['N_EPOCHS'])), ncols=100, leave=True, position=0):
             

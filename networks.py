@@ -298,8 +298,10 @@ class NETWORK_BUILDER():
             clean_state_dict = pkl.load(open(f'./clean_models/{DATASET}_{NETWORK}_clean.pkl', 'rb'))
             model.load_state_dict(clean_state_dict['model_state_dict'])
         
+        # TODO: remember to change to .pth loading before releasing
         if self.config['args']['checkpoint']:
-            model.load_state_dict(torch.load(self.config['args']['checkpoint']))
+            checkpoint = pkl.load(open(self.config['args']['checkpoint'], 'rb'))['model_state_dict']
+            model.load_state_dict(checkpoint)
         
         if self.config['train']['DISTRIBUTED']:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)

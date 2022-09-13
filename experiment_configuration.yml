@@ -19,8 +19,8 @@ train:
   LR:              !!float 0.007
   WEIGHT_DECAY:    !!float 0.0005
   MOMENTUM:        !!float 0.9
-  USE_TRANSFORM:   !!bool false
-  USE_CLIP:        !!bool false
+  USE_TRANSFORM:   !!bool true
+  USE_CLIP:        !!bool true
   DISTRIBUTED:     !!bool false
   GRAD_CUMU_EPOCH: !!int  4
 
@@ -50,7 +50,8 @@ attack:
   TRIGGER_SIZE:   !!float 10
   TROJ_FRACTION:  !!float 0.2
   SOURCE_TARGET_PAIR: !!map {0: 1}
-  TRIGGER_SAVE_DIR: !!str '/scr/songzhu/trojai/uapattack/triggers'
+  TRIGGER_SAVE_DIR:   !!str '/scr/songzhu/trojai/uapattack/triggers'
+  ALPHA:              !!float 0.5
   # TRIGGER_SAVE_DIR: !!str '/data/songzhu/uapattack/triggers'
 
   badnet:
@@ -83,15 +84,34 @@ attack:
     DYNAMIC:       !!bool false   # whether to dynamically inject trojan
   ulp:
     OPTIM_EPOCHS:  !!int 5
-    N_IMAGES:      !!int 300      # num of images to be edited by ULP
-    NUM_MODELS:    !!int 5        # num of models used to generate ULP
-    N_ULP:         !!int 1        # num of ULP pattern used
-    FOOLING_RATE:  !!float 0.9    # proportion of images to be fooled before termination
-    DYNAMIC:       !!bool false   # true to use dynamic injection (inject during training process)
+    N_IMAGES:      !!int 300       # num of images to be edited by ULP
+    NUM_MODELS:    !!int 5         # num of models used to generate ULP
+    N_ULP:         !!int 1         # num of ULP pattern used
+    FOOLING_RATE:  !!float 0.9     # proportion of images to be fooled before termination
+    DYNAMIC:       !!bool false    # true to use dynamic injection (inject during training process)
     LABEL_CLEAN:   !!bool false    # true to use clean-label attack version
-
+    MODEL_POOL:    !!map  {'resnet18cifar10':['/home/songzhu/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133220.pkl', 
+                                              '/home/songzhu/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133217.pkl', 
+                                              '/home/songzhu/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133215.pkl', 
+                                              '/home/songzhu/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133212.pkl', 
+                                              '/home/songzhu/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133209.pkl'], 
+                           'vgg16cifar10':  ['/home/songzhu/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210154.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210147.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210140.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210133.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210126.pkl'], 
+                            'resnet18gtsrb':['/home/songzhu/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130234.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130229.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130225.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130220.pkl', 
+                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130216.pkl'], 
+                            'vgg16gtsrb':  ['/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185735.pkl', 
+                                            '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185731.pkl', 
+                                            '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185726.pkl', 
+                                            '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185722.pkl', 
+                                            '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185717.pkl']}
 adversarial:
-  ADV_TRAIN:    !!bool false      # use adversarial training
+  ADV_TRAIN:    !!bool true      # use adversarial training
   EPS:          !!float 1         # step size
   RADIUS:       !!float 1         # defense radius
   OPTIM_EPOCHS: !!int 1
