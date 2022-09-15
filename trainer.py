@@ -95,7 +95,8 @@ class TRAINER():
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
                 if self.attacker and self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
+                    images_troj, labels_c2, labels_t2, troj_ind = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
+                        
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
@@ -317,9 +318,9 @@ class TRAINER():
             if self.attacker and self.attacker.dynamic: 
                 self.attacker.reset_trojcount()
                 
-                iamges_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, mode='test')
-                if len(iamges_troj):
-                    images = torch.cat([images, iamges_troj], 0)
+                images_troj, labels_c2, labels_t2, troj_ind = self.attacker.inject_trojan_dynamic(images, labels_c, mode='test')
+                if len(images_troj):
+                    images = torch.cat([images, images_troj], 0)
                     labels_c = torch.cat([labels_c, labels_c2])
                     labels_t = torch.cat([labels_t, labels_t2])
             

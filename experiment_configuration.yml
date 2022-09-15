@@ -110,6 +110,28 @@ attack:
                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185726.pkl', 
                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185722.pkl', 
                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185717.pkl']}
+
+    # MODEL_POOL:    !!map  {'resnet18cifar10':['/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133220.pkl', 
+    #                                           '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133217.pkl', 
+    #                                           '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133215.pkl', 
+    #                                           '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133212.pkl', 
+    #                                           '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_resnet18_clean_adv_20220908133209.pkl'], 
+    #                        'vgg16cifar10':  ['/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210154.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210147.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210140.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210133.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/cifar10_vgg16_clean_adv_20220908210126.pkl'], 
+    #                         'resnet18gtsrb':['/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130234.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130229.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130225.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130220.pkl', 
+    #                                          '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_resnet18_clean_adv_20220908130216.pkl'], 
+    #                         'vgg16gtsrb':  ['/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185735.pkl', 
+    #                                         '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185731.pkl', 
+    #                                         '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185726.pkl', 
+    #                                         '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185722.pkl', 
+    #                                         '/home/songzhu/PycharmProjects/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185717.pkl']}
+
 adversarial:
   ADV_TRAIN:    !!bool false      # use adversarial training
   EPS:          !!float 1         # step size

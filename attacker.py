@@ -661,6 +661,7 @@ class IMCATTACK(ATTACKER):
         self.argsnetwork = config['args']['network']
         self.argsmethod = config['args']['method']
 
+        self.rho_a  = config['attack']['TROJ_FRACTION']
         self.device = self.config['train']['device']
         self.config  = config
         self.dynamic = True
@@ -708,29 +709,31 @@ class IMCATTACK(ATTACKER):
             t = self.target_source_pair[s]
             troj_ind = torch.where(labels==s)[0]
 
-            if len(troj_ind)>0:
+            if len(troj_ind)>0 and self.troj_count[s] < int(self.rho_a*len(self.databuilder.trainset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
                 trigger_tanh = self._tanh_func(self.trigger[s].permute(0, 2, 3, 1))
                 img_inject = self._add_trigger(imgs[troj_ind], trigger_tanh, trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
                 img_inject = self.normalizer(img_inject).to(self.device)
-                
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
-                if kwargs['mode'] == 'train':
-                    outs_t = self.model(img_inject)
-                    loss_adv = F.cross_entropy(outs_t, labels_inject)/int(self.config['train']['GRAD_CUMU_EPOCH'])
-                    loss_adv.backward()
-                    
-                    # cumulate gradient for larger batchsize training
-                    if kwargs['gradient_step']:
-                        
-                        delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
-                        self.trigger[s] -= 0.1*delta_trigger
-                        self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1e-6)
-                        self.trigger[s].requires_grad = True
-
                 img_inject_list.append(img_inject.detach().cpu())
                 labels_clean_list.append(labels[troj_ind])
                 labels_inject_list.append(labels_inject.detach().cpu()) 
+                
+                self.troj_count[s] += len(img_inject)
+                
+            if kwargs['mode'] == 'train' and len(img_inject_list):
+                
+                outs_t = self.model(img_inject)
+                loss_adv = F.cross_entropy(outs_t, labels_inject)/int(self.config['train']['GRAD_CUMU_EPOCH'])
+                loss_adv.backward()
+                
+                # cumulate gradient for larger batchsize training
+                if kwargs['gradient_step']:
+                    
+                    delta_trigger, self.trigger[s] = self.trigger[s].grad.data.detach(), self.trigger[s].detach()
+                    self.trigger[s] -= 0.1*delta_trigger
+                    self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1e-6)
+                    self.trigger[s].requires_grad = True
         
         # reset model status
         if kwargs['mode'] == 'train':
@@ -760,7 +763,7 @@ class IMCATTACK(ATTACKER):
         else:
             img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
         
-        return img_inject, labels_clean, labels_inject
+        return img_inject, labels_clean, labels_inject, troj_ind
     
     
     def reset_trojcount(self):
