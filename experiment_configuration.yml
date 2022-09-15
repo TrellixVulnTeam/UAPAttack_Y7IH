@@ -22,7 +22,7 @@ train:
   USE_TRANSFORM:   !!bool true
   USE_CLIP:        !!bool true
   DISTRIBUTED:     !!bool false
-  GRAD_CUMU_EPOCH: !!int  4
+  GRAD_CUMU_EPOCH: !!int  2
 
   cifar10:
     N_EPOCHS:     !!int 200
@@ -40,7 +40,7 @@ train:
     BACKEND:      !!str 'nccl'
   imagenet:
     N_EPOCHS:     !!int 80
-    BATCH_SIZE:   !!int 16
+    BATCH_SIZE:   !!int 8
     MILE_STONE:   !!seq [20, 40, 60]
     T_MAX:        !!int 80
     GAMMA:        !!float 0.1
@@ -111,7 +111,7 @@ attack:
                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185722.pkl', 
                                             '/home/songzhu/UAPAttack/clean_models/gtsrb_vgg16_clean_adv_20220908185717.pkl']}
 adversarial:
-  ADV_TRAIN:    !!bool true      # use adversarial training
+  ADV_TRAIN:    !!bool false      # use adversarial training
   EPS:          !!float 1         # step size
   RADIUS:       !!float 1         # defense radius
   OPTIM_EPOCHS: !!int 1

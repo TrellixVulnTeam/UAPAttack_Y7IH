@@ -107,7 +107,7 @@ class TRAINER():
                 loss = criterion_ce(outs, labels_t)/self.gradcumu_epoch
                 loss.backward()
                                 
-                if b%2:
+                if b%self.gradcumu_epoch:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 100)
                     optimizer.step()
                     optimizer.zero_grad()

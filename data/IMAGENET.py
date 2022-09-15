@@ -400,7 +400,7 @@ if __name__ == '__main__':
     from trainer import TRAINER
     from networks import DenseNet121, ResNet18, VGG16
 
-    seed = 123
+    seed = 345
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
@@ -408,7 +408,7 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '6'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     with open('experiment_configuration.yml', 'r') as f:
@@ -419,23 +419,23 @@ if __name__ == '__main__':
     config['train']['DISTRIBUTED'] = False
     config['args'] = defaultdict()
     config['args']['dataset'] = 'imagenet'
-    config['args']['network'] = 'gtsrb'
+    config['args']['network'] = 'vgg16'
     config['args']['method'] = 'clean'
     config['args']['savedir'] = '/scr/songzhu/trojai/uapattack/result'
     config['args']['logdir'] = './log'
-    config['args']['seed'] = 123
+    config['args']['seed'] = seed
     config['misc']['VERBOSE'] = False
     N_EPOCH = 40
     
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
+        transforms.RandomResizedCrop(112),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         ])
     test_transform = transforms.Compose([
         transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.CenterCrop(112),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
@@ -451,7 +451,7 @@ if __name__ == '__main__':
     
     for i in range(5):
 
-        config['args']['seed'] = 234+i
+        config['args']['seed'] = seed+i
         
         np.random.seed(config['args']['seed'])
         random.seed(config['args']['seed'])

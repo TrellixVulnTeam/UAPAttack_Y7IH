@@ -363,7 +363,7 @@ class REFLECTATTACK(ATTACKER):
             
             # eval to update trigger weight
             # record eval fool number
-            w_cand_t = torch.ones(len(w_cand))
+            w_cand_t = torch.zeros(len(w_cand))
             
             model.model.eval()
             for _, (_, images, labels_c, _) in enumerate(valid_loader):
@@ -667,12 +667,6 @@ class IMCATTACK(ATTACKER):
         
         # use 3*3 trigger as suggested by the original paper
         self.trigger = defaultdict(torch.tensor)
-        for s in self.target_source_pair:
-            self.trigger[s] = torch.rand_like(torch.ones([
-                config['attack']['imc']['N_TRIGGER'], 
-                config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
-                3, 3
-            ]), requires_grad=True)
     
         self.background = torch.zeros([
             1, 
@@ -690,12 +684,7 @@ class IMCATTACK(ATTACKER):
             std = databuilder.std
         )
         
-        neuron_idx = self._get_enuron_idx()
-        self._preprocess_trigger(neuron_idx)
-        
         self.troj_count = {s:0 for s in self.target_source_pair}
-        
-        
         
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor, 
@@ -703,6 +692,12 @@ class IMCATTACK(ATTACKER):
                               **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         
         imgs = self.denormalizer(imgs)
+        for s in self.target_source_pair:
+            self.trigger[s] = torch.randn_like(torch.ones([
+                self.config['attack']['imc']['N_TRIGGER'], 
+                self.config['dataset'][self.argsdataset]['NUM_CHANNELS'], 
+                3, 3
+            ]), requires_grad=True)
             
         img_inject_list = []
         labels_clean_list  = []
@@ -714,16 +709,15 @@ class IMCATTACK(ATTACKER):
             troj_ind = torch.where(labels==s)[0]
 
             if len(troj_ind)>0:
-                img_inject = self._add_trigger(imgs[troj_ind], self.trigger[s].permute(0,2,3,1), trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
-                if self.config['train']['USE_CLIP']:
-                    img_inject = torch.clip(img_inject, 0, 1)
+                trigger_tanh = self._tanh_func(self.trigger[s].permute(0, 2, 3, 1))
+                img_inject = self._add_trigger(imgs[troj_ind], trigger_tanh, trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
                 img_inject = self.normalizer(img_inject).to(self.device)
                 
                 labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
                 
                 if kwargs['mode'] == 'train':
                     outs_t = self.model(img_inject)
-                    loss_adv = F.cross_entropy(outs_t, labels_inject)/2
+                    loss_adv = F.cross_entropy(outs_t, labels_inject)/int(self.config['train']['GRAD_CUMU_EPOCH'])
                     loss_adv.backward()
                     
                     # cumulate gradient for larger batchsize training
@@ -737,8 +731,10 @@ class IMCATTACK(ATTACKER):
                 img_inject_list.append(img_inject.detach().cpu())
                 labels_clean_list.append(labels[troj_ind])
                 labels_inject_list.append(labels_inject.detach().cpu()) 
-                
-        self.model.train()
+        
+        # reset model status
+        if kwargs['mode'] == 'train':
+            self.model.train()
         
         if len(img_inject_list):
             
@@ -765,51 +761,6 @@ class IMCATTACK(ATTACKER):
             img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
         
         return img_inject, labels_clean, labels_inject
-        
-        
-
-    def _preprocess_trigger(self, neuron_idx: torch.Tensor):
-        
-        self.model = self.model.to(self.device)
-        
-        trigger_optimizer = torch.optim.Adam([self.trigger[s] for s in self.target_source_pair], lr=self.config['attack']['imc']['TRIGGER_LR'])
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(trigger_optimizer, T_max=self.config['attack']['imc']['NEURON_EPOCH'])
-        
-        for s in self.target_source_pair:
-            
-            with torch.no_grad():
-                trigger_s = self.trigger[s]
-                tanh_trigger_s = self._tanh_func(trigger_s)
-                trigger_input  = self._add_trigger(self.background, tanh_trigger_s, trigger_alpha=self.alpha)
-                if self.databuilder.trainset.use_transform:
-                    trigger_input = self.normalizer(trigger_input)
-            
-            for _ in range(self.config['attack']['imc']['NEURON_EPOCH']):
-                trigger_feat_s = self.model.partial_forward(trigger_input.to(self.device))
-                trigger_feat_s = trigger_feat_s[:, neuron_idx].abs()
-                if trigger_feat_s.dim() > 2:
-                    trigger_feat_s = trigger_feat_s.flatten(2).sum(2)
-                loss = F.mse_loss(trigger_feat_s, 100*torch.ones_like(trigger_feat_s), reduce='sum')
-                trigger_optimizer.zero_grad()
-                loss.backward()
-                trigger_optimizer.step()
-                lr_scheduler.step()
-                
-    
-    def _get_enuron_idx(self) -> torch.tensor:
-        
-        if 'resnet' in self.argsnetwork:
-            weight = self.model.linear.weight.abs()
-        elif 'vgg' in self.argsnetwork:
-            weight = self.model.classifier.weight.abs()
-        elif 'densenet' in self.argsnetwork:
-            weight = self.model.linear.weight.abs()
-        else:
-            raise NotImplementedError
-            
-        if weight.dim() > 2:
-            weight = weight.flatten(2).sum(2)
-        return weight.sum(0).argsort(descending=True)[:2]
     
     
     def reset_trojcount(self):
@@ -1140,7 +1091,7 @@ class ULPATTACK(ATTACKER):
                         self.ulp[k] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.ulp[k], p=2)+1e-4)
                         self.ulp[k].requires_grad = True
                     
-                if (not self.config['network']['PRETRAINED']) and (b%2):
+                if (not self.config['network']['PRETRAINED']) and (b%self.config['train']['GRAD_CUMU_EPOCH']):
                     for i in range(len(self.model_list)):
                         torch.nn.utils.clip_grad_norm_(self.model_list[i].parameters(), 100)
                     optimizer.step()
