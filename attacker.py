@@ -1,3 +1,4 @@
+from dataclasses import replace
 import os
 from collections import defaultdict
 from typing import Dict, List, Tuple
@@ -124,6 +125,7 @@ class ATTACKER():
     
     def inject_trojan_dynamic(self, 
                               img: torch.tensor, 
+                              imgs_ind, 
                               **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         raise NotImplementedError
     
@@ -565,18 +567,20 @@ class WANETATTACK(ATTACKER):
         x, y = torch.meshgrid(array1d, array1d)
         self.identity_grid = torch.stack((y, x), 2)[None, ...]
         
-        self.dataset = databuilder.trainset
         self.config = config
-        self.troj_count = {s:0 for s in self.target_source_pair}
+        
+        self.target_ind_train = np.array([i for i in range(len(databuilder.trainset.labels_c)) if int(databuilder.trainset.labels_c[i]) in self.target_source_pair])
+        self.target_ind_test  = np.array([i for i in range(len(databuilder.testset.labels_c))  if int(databuilder.testset.labels_c[i]) in self.target_source_pair])
+        self.attack_ind = np.random.choice(self.target_ind_train, size=int(self.config['attack']['TROJ_FRACTION']*len(self.target_ind_train)), replace=False)
         
         self.trigger = {}
         
         self.dynamic =True
         
-    
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor,
                               labels: torch.tensor,
+                              imgs_ind: torch.tensor, 
                               **kwargs) -> Tuple[torch.tensor, torch.tensor]:
         
         device = imgs.device
@@ -586,47 +590,49 @@ class WANETATTACK(ATTACKER):
         labels_inject = []
         
         imgs = self.denormalizer(VF.resize(imgs, (self.img_h, self.img_h)))
-        
-        for s in self.target_source_pair: 
+        if kwargs['mode'] == 'train':
+            troj_ind = np.array([i for i in range(len(imgs_ind)) if imgs_ind[i].item() in self.attack_ind])
+        else:
+            troj_ind = np.array([i for i in range(len(imgs_ind)) if imgs_ind[i].item() in self.target_ind_test])
+    
+        if len(troj_ind):
             
-            if self.troj_count[s] < int(self.rho_a*len(self.dataset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
+            num_triggered = len(troj_ind)    
+            grid_trigger = (self.identity_grid + self.s*self.noise_grid / self.img_h)
+            self.grid_trigger = torch.clamp(grid_trigger, -1, 1).to(device)
             
-                t = self.target_source_pair[s]
-                select_ind = torch.where(labels==t)[0]
-                
-                num_triggered = len(select_ind)
+            img_troj   = F.grid_sample(imgs[troj_ind], self.grid_trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
+            trigger = (img_troj-imgs[troj_ind])/torch.norm(img_troj-imgs[troj_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
+            # constrain the overall trigger budget
+            img_troj   = (1-self.alpha)*imgs[troj_ind] + self.alpha*trigger
+            labels_troj = torch.tensor([self.target_source_pair[s.item()] for s in labels[troj_ind]], dtype=torch.long).to(device) 
+                        
+            img_inject.append(img_troj)
+            labels_inject.append(labels_troj)
+            labels_clean.append(labels[troj_ind])
+            
+            if kwargs['mode'] == 'train':
+                    
                 num_cross = int(len(imgs)*self.rho_n)
-                noise_ind = np.setdiff1d(range(len(imgs)), select_ind.detach().cpu().numpy())[:num_cross]
-        
-                grid_trigger = (self.identity_grid + self.s*self.noise_grid / self.img_h)
-                self.grid_trigger = torch.clamp(grid_trigger, -1, 1)
-                trigger = self.grid_trigger.to(device)
-        
+                noise_ind = np.setdiff1d(range(len(imgs)), troj_ind)[:num_cross]
+                
                 ins = 2*torch.rand(len(noise_ind), self.img_h, self.img_h, 2) - 1
                 grid_noise = grid_trigger.repeat(len(noise_ind), 1, 1, 1) + ins/self.img_h
-                self.grid_noise = torch.clamp(grid_noise, -1, 1)
-                self.grid_noise = self.grid_noise.to(device)
-        
-                img_troj   = F.grid_sample(imgs[select_ind], trigger.repeat(num_triggered, 1, 1, 1), align_corners=True)
-                self.trigger[s] = (img_troj-imgs[select_ind])/torch.norm(img_troj-imgs[select_ind],p=2)*self.config['attack']['TRIGGER_SIZE']
-                # constrain the overall trigger budget
-                img_troj   = (1-self.alpha)*imgs[select_ind] + self.alpha*self.trigger[s]
-                if len(self.trigger[s]):
-                    self.trigger[s] = self.trigger[s][0].permute(1,2,0).numpy() 
+                self.grid_noise = torch.clamp(grid_noise, -1, 1).to(device)
                 
-                img_noise  = F.grid_sample(imgs[noise_ind], self.grid_noise, align_corners=True)
-                labels_troj  = t*torch.ones(labels[select_ind].shape, dtype=torch.long).to(device)
-                labels_noise = s*torch.ones(labels[noise_ind].shape, dtype=torch.long).to(device)
-
-                img_inject.append(img_troj)
+                img_noise   = F.grid_sample(imgs[noise_ind], self.grid_noise, align_corners=True)
+                labels_noise = labels[noise_ind].to(device)
+            
                 img_inject.append(img_noise)
-                labels_inject.append(labels_troj)
                 labels_inject.append(labels_noise)
-                labels_clean.append(labels[select_ind])
                 labels_clean.append(labels[noise_ind])
-                
-                self.troj_count[s] += len(img_troj)
-        
+
+            # for record purpose only
+            for s in self.target_source_pair:
+                troj_ind_s = torch.where(labels[troj_ind]==s)[0]
+                if len(troj_ind_s):
+                    self.trigger[s] = trigger[troj_ind_s][0].permute(1,2,0).detach().cpu().numpy() 
+            
         if len(img_inject):
             if self.config['train']['USE_CLIP']:
                 img_inject = [torch.clip(x, 0, 1) for x in img_inject]
@@ -637,10 +643,6 @@ class WANETATTACK(ATTACKER):
         return img_inject, labels_clean, labels_inject
         
     
-    def reset_trojcount(self):
-        self.troj_count = {s:0 for s in self.target_source_pair}
-    
-
 class IMCATTACK(ATTACKER):
     
     def __init__(self, 
@@ -668,6 +670,9 @@ class IMCATTACK(ATTACKER):
         
         # use 3*3 trigger as suggested by the original paper
         self.trigger = defaultdict(torch.tensor)
+        self.target_ind_train = np.array([i for i in range(len(databuilder.trainset.labels_c)) if int(databuilder.trainset.labels_c[i]) in self.target_source_pair])
+        self.target_ind_test  = np.array([i for i in range(len(databuilder.testset.labels_c))  if int(databuilder.testset.labels_c[i]) in self.target_source_pair])
+        self.attack_ind = np.random.choice(self.target_ind_train, size=int(self.config['attack']['TROJ_FRACTION']*len(self.target_ind_train)), replace=False)
     
         self.background = torch.zeros([
             1, 
@@ -685,11 +690,10 @@ class IMCATTACK(ATTACKER):
             std = databuilder.std
         )
         
-        self.troj_count = {s:0 for s in self.target_source_pair}
-        
     def inject_trojan_dynamic(self, 
                               imgs: torch.tensor, 
                               labels: torch.tensor, 
+                              imgs_ind: torch.tensor, 
                               **kwargs) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         
         imgs = self.denormalizer(imgs)
@@ -704,24 +708,34 @@ class IMCATTACK(ATTACKER):
         labels_clean_list  = []
         labels_inject_list = []
         
-        self.model.eval()
-        for s in self.target_source_pair:
-            t = self.target_source_pair[s]
-            troj_ind = torch.where(labels==s)[0]
+        if kwargs['mode'] == 'train':
+            troj_ind = np.array([i for i in range(len(imgs_ind)) if imgs_ind[i].item() in self.attack_ind])
+        else:
+            troj_ind = np.array([i for i in range(len(imgs_ind)) if imgs_ind[i].item() in self.target_ind_test])
 
-            if len(troj_ind)>0 and self.troj_count[s] < int(self.rho_a*len(self.databuilder.trainset)//self.config['dataset'][self.argsdataset]['NUM_CLASSES']):
-                trigger_tanh = self._tanh_func(self.trigger[s].permute(0, 2, 3, 1))
-                img_inject = self._add_trigger(imgs[troj_ind], trigger_tanh, trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
-                img_inject = self.normalizer(img_inject).to(self.device)
-                labels_inject = t*torch.ones(len(troj_ind), dtype=torch.long).to(self.device)
+        self.model.eval()
+        if len(troj_ind)>0:
+            for s in self.target_source_pair:
                 
-                img_inject_list.append(img_inject.detach().cpu())
-                labels_clean_list.append(labels[troj_ind])
-                labels_inject_list.append(labels_inject.detach().cpu()) 
+                troj_ind_s = torch.where(labels == s)[0]
+                t = self.target_source_pair[s]
                 
-                self.troj_count[s] += len(img_inject)
+                if len(troj_ind_s):
+
+                    trigger_tanh = self._tanh_func(self.trigger[s].permute(0, 2, 3, 1))
+                    img_inject = self._add_trigger(imgs[troj_ind_s], trigger_tanh, trigger_alpha=self.config['attack']['imc']['TRIGGER_ALPHA'])
+                    img_inject = self.normalizer(img_inject).to(self.device)
+                    labels_inject = t*torch.ones(len(troj_ind_s), dtype=torch.long).to(self.device)
                 
+                    img_inject_list.append(img_inject)
+                    labels_clean_list.append(labels[troj_ind_s])
+                    labels_inject_list.append(labels_inject) 
+            
             if kwargs['mode'] == 'train' and len(img_inject_list):
+                
+                img_inject = torch.cat(img_inject_list, 0)
+                if len(img_inject.shape)==3:
+                    img_inject = img_inject[None, :, :, :]
                 
                 outs_t = self.model(img_inject)
                 loss_adv = F.cross_entropy(outs_t, labels_inject)/int(self.config['train']['GRAD_CUMU_EPOCH'])
@@ -734,13 +748,19 @@ class IMCATTACK(ATTACKER):
                     self.trigger[s] -= 0.1*delta_trigger
                     self.trigger[s] *= self.config['attack']['TRIGGER_SIZE']/(torch.norm(self.trigger[s], p=2)+1e-6)
                     self.trigger[s].requires_grad = True
+                           
+            labels_clean, labels_inject = torch.cat(labels_clean_list), torch.cat(labels_inject_list)
+                        
+        else:
+            img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
         
         # reset model status
         if kwargs['mode'] == 'train':
             self.model.train()
         
-        if len(img_inject_list):
-            
+        return img_inject.clone(), labels_clean, labels_inject
+    
+    
         #     if 'epoch' in kwargs and kwargs['batch']==0:
         #         import matplotlib.pyplot as plt
         #         ind = 0
@@ -755,19 +775,6 @@ class IMCATTACK(ATTACKER):
         #         delta_img = np.abs(plot_img_troj-plot_img_clean)
         #         plt.imshow((delta_img-delta_img.min())/(delta_img.max()-delta_img.min()))
         #         plt.savefig(f"./tmp/img_imc_{kwargs['epoch']}.png")
-            
-            img_inject = torch.cat(img_inject_list, 0)
-            if len(img_inject.shape)==3:
-                img_inject = img_inject[None, :, :, :]
-            labels_clean, labels_inject = torch.cat(labels_clean_list), torch.cat(labels_inject_list)
-        else:
-            img_inject, labels_clean, labels_inject = torch.tensor([]), torch.tensor([]), torch.tensor([])
-        
-        return img_inject, labels_clean, labels_inject, troj_ind
-    
-    
-    def reset_trojcount(self):
-        self.troj_count = {s:0 for s in self.target_source_pair}
     
     
     @staticmethod

@@ -85,26 +85,23 @@ class TRAINER():
             for k in self.metric_history:
                 self.metric_history[k].reset()
             
-            if self.attacker and self.attacker.dynamic:
-                self.attacker.reset_trojcount()
-            
             if self.config['train']['DISTRIBUTED']:
                 self.trainloader.sampler.set_epoch(epoch)
             
             self.model.train()
             for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
+                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
+                
                 if self.attacker and self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2, troj_ind = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
+                    images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, imgs_ind=ind, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
                         
                     if len(images_troj):
                         images   = torch.cat([images, images_troj], 0)
                         labels_c = torch.cat([labels_c, labels_c2], 0)
                         labels_t = torch.cat([labels_t, labels_t2], 0)
                 
-                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
                 outs = self.model(images)
-                
                 loss = criterion_ce(outs, labels_t)/self.gradcumu_epoch
                 loss.backward()
                                 
@@ -199,17 +196,15 @@ class TRAINER():
             
             if self.config['train']['DISTRIBUTED']:
                 self.trainloader.sampler.set_epoch(epoch)
-            
-            if self.attacker and self.attacker.dynamic:
-                self.attacker.reset_trojcount()
 
             self.model.train()
-            for b, (_, images, labels_c, labels_t) in enumerate(self.trainloader):
+            for b, (ind, images, labels_c, labels_t) in enumerate(self.trainloader):
                 
+                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
                 delta_x_batch = torch.zeros(images.shape, dtype=images.dtype).to(self.device)
                 
                 if self.attacker and self.attacker.dynamic:
-                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
+                    images_troj, labels_c2, labels_t2  = self.attacker.inject_trojan_dynamic(images, labels_c, imgs_ind=ind, epoch=epoch, batch=b, mode='train', gradient_step=b%self.gradcumu_epoch)
                     if len(images_troj):
                         delta_x_batch_troj = torch.zeros(images_troj.shape, dtype=images_troj.dtype).to(self.device)
                         
@@ -217,9 +212,6 @@ class TRAINER():
                         labels_c = torch.cat([labels_c, labels_c2])
                         labels_t = torch.cat([labels_t, labels_t2])
                         delta_x_batch = torch.cat([delta_x_batch, delta_x_batch_troj])
-                
-                images, labels_c, labels_t = images.to(self.device), labels_c.to(self.device), labels_t.to(self.device)
-                delta_x_batch = delta_x_batch.to(self.device)
                 
                 for _ in range(int(self.config['adversarial']['OPTIM_EPOCHS'])):
                     
@@ -313,12 +305,11 @@ class TRAINER():
         overall_acc = AverageMeter('test_overall_acc', offset=1)
         
         self.model.eval()
-        for b, (_, images, labels_c, labels_t) in enumerate(evalloader):
+        for b, (ind, images, labels_c, labels_t) in enumerate(evalloader):
             
             if self.attacker and self.attacker.dynamic: 
-                self.attacker.reset_trojcount()
                 
-                images_troj, labels_c2, labels_t2, troj_ind = self.attacker.inject_trojan_dynamic(images, labels_c, mode='test')
+                images_troj, labels_c2, labels_t2 = self.attacker.inject_trojan_dynamic(images, labels_c, imgs_ind=ind, mode='test')
                 if len(images_troj):
                     images = torch.cat([images, images_troj], 0)
                     labels_c = torch.cat([labels_c, labels_c2])
@@ -332,8 +323,8 @@ class TRAINER():
                 outs = self.model(images)
             loss = criterion_ce(outs, labels_t)
 
-            clean_ind  = torch.where(labels_c == labels_t)[0]
-            troj_ind = torch.where(labels_c != labels_t)[0]
+            clean_ind = torch.where(labels_c == labels_t)[0]
+            troj_ind  = torch.where(labels_c != labels_t)[0]
             
             _, pred = outs.max(1)
             
