@@ -12,7 +12,6 @@ import torchvision.transforms.functional as VF
 import numpy as np  
 import scipy.stats as st
 import cv2
-from skimage.metrics import structural_similarity
 from PIL import Image
 from copy import deepcopy
 import pickle as pkl
@@ -20,7 +19,7 @@ import time
 
 from data.PASCAL import PASCAL
 from data.data_builder import DATA_BUILDER
-from utils import DENORMALIZER
+from utils import DENORMALIZER, ssim 
 from networks import NETWORK_BUILDER
 
 
@@ -258,8 +257,8 @@ class REFLECTATTACK(ATTACKER):
             
             _, img_in, img_tr, img_rf = self._blend_images(torch.tensor(img).permute(2,0,1)[None, :, :, :], img_r[None, :, :, :])
             cond1 = (torch.mean(img_rf) <= 0.8*torch.mean(img_in - img_rf)) and (img_in.max() >= 0.1)
-            cond2 = (0.7 < structural_similarity(img_in.squeeze().permute(1,2,0).numpy(), 
-                                                 img_tr.squeeze().permute(1,2,0).numpy(), channel_axis=2, multichannel=True) < 0.85)
+            cond2 = (0.7 < ssim(img_in.squeeze().permute(1,2,0).numpy(), 
+                                img_tr.squeeze().permute(1,2,0).numpy(), channel_axis=2, multichannel=True) < 0.85)
             
             if cond1 and cond2:
                 break    
@@ -531,7 +530,7 @@ class REFLECTATTACK(ATTACKER):
         with open(save_path, 'wb') as f:
             pkl.dump(self.trigger, f)
         f.close()
-
+    
 
 class WANETATTACK(ATTACKER):
     
